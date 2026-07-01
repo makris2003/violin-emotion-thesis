@@ -1,0 +1,19 @@
+# Audio
+data/raw/
+
+# Questionnaire data (if privacy-sensitive)
+data/forms/
+
+# Generated outputs — always reproducible from the notebook
+outputs/
+
+# Embeddings — large binary files
+*.npz
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
