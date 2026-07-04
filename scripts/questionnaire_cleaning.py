@@ -1,41 +1,50 @@
 """
-questionnaire_cleaning.py
+questionnaire_cleaning.py  (v2 — participant screening only)
 ─────────────────────────────────────────────────────────────────────────────
-Screening script for participant and stimulus quality in the violin emotion
-listening study.
+Participant-level quality screening for the violin emotion listening study.
 
-WHAT IT DOES
-  Participant-level screening (6 methods)
-  ├─ Mahalanobis Distance (MD) — primary, supervisor-recommended
-  ├─ Robust MD with Minimum Covariance Determinant (MCD) estimator
-  ├─ Person-Total Correlation
-  ├─ Intra-Individual Response Variability (IRV)
-  ├─ LongString Index
-  └─ Combined flag (participant flagged by ≥2 methods)
+WHAT CHANGED FROM v1
+  • Stimulus/ICC screening REMOVED from this file — it now lives in the separate
+    excerpt_cleaning.py (the old per-excerpt "ICC" here was mathematically invalid).
+  • Participant IDs now match the NOTEBOOK convention ('{csv_stem}_P{nnn}', e.g.
+    'questionnaire_5_P012') so a flagged list can be pasted straight into the
+    pipeline's exclusion step. A short alias ('S5_P012') is also emitted for
+    continuity with earlier reports.
+  • Person-total correlation is now LEAVE-ONE-OUT (each participant is compared
+    against the group mean computed WITHOUT them) — removes self-inclusion bias.
+  • Adds an incomplete-response flag (too few valid ratings).
+  • Fixes a plotting bug in v1 (bar colours were sorted independently of bar
+    heights, mis-colouring the flagged bars).
+  • Writes 'excluded_participant_ids.csv' — the ≥2-method exclusion list, ready
+    to use in the notebook.
 
-  Stimulus-level screening
-  ├─ Intraclass Correlation Coefficient (ICC) per excerpt
-  └─ Stimulus entropy (label disagreement across participants)
+SCREENING METHODS (participant level)
+  1. Mahalanobis Distance (classical)      — distance from group centroid
+  2. Robust MD via MCD (Rousseeuw)         — masking-resistant; PRIMARY
+  3. Person-Total correlation (LOO)        — agreement with the consensus
+  4. Intra-individual Response Variability — straight-lining / random noise
+  5. LongString index                      — runs of identical clicks
+  → COMBINED flag = flagged by ≥2 independent methods (exclusion candidates)
 
-HOW TO USE
-  1. Set the 5 constants at the top of the CONFIG block
-  2. Run:  python questionnaire_cleaning.py
-  3. Inspect the generated report files and decide what to remove
+DESIGN NOTE / CAVEAT
+  MD assumes multivariate-normal ratings; 1–6 Likert data violate this, so the
+  χ² cutoff is a convention, not ground truth. With p=40 rating dimensions the
+  covariance is estimated from n≈118 participants — adequate but noisy. Treat MD
+  as ONE detector among several; only the ≥2-method combined flag drives removal.
 
-OUTPUT
-  cleaning_report_participants.csv  — one row per participant, all scores + flags
-  cleaning_report_stimuli.csv       — one row per excerpt, ICC + entropy + flag
-  cleaning_summary.txt              — plain-English summary for your methods section
-  cleaning_plots/                   — diagnostic figures (MD scatter, IRV hist, etc.)
+USAGE
+  1. Edit the CONFIG block (CSV_GLOB, OUTPUT_DIR).
+  2. python questionnaire_cleaning.py
+  3. Inspect the reports; apply excluded_participant_ids.csv in the notebook.
+
+Reference: Goldammer et al. (2020), PLOS ONE — Mahalanobis distance + personal
+reliability are among the most effective careless-responder detectors.
 ─────────────────────────────────────────────────────────────────────────────
 """
 
-# ── standard library ──────────────────────────────────────────────────────────
-import os, re, glob, warnings
-from collections import Counter
+import os, glob, warnings
 from pathlib import Path
 
-# ── third-party ───────────────────────────────────────────────────────────────
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -46,34 +55,27 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-try:
-    import pingouin as pg
-    PINGOUIN_OK = True
-except ImportError:
-    PINGOUIN_OK = False
-    warnings.warn("pingouin not found — ICC will be computed with a manual formula. "
-                  "Install with: pip install pingouin")
-
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CONFIG — edit these to match your project
+#  CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
+CSV_GLOB = '/kaggle/input/datasets/george031218732003/violin-thesis-forms/Forms/questionnaire_*.csv'
+OUTPUT_DIR     = '/kaggle/working/cleaning_output'
+DATA_START_COL = 3     # first data column (0-indexed): layout is [tags, val, aro] × 20
+COLS_PER_ITEM  = 3
+N_EXCERPTS     = 20
+VA_SCALE_MIN   = 1
+VA_SCALE_MAX   = 6
 
-CSV_GLOB = '/kaggle/input/datasets/george031218732003/violin-thesis-forms/Forms/*.csv'   # path pattern to your questionnaire CSVs
-OUTPUT_DIR      = '/kaggle/working/cleaning_output'      # where results are written
-DATA_START_COL  = 3                        # first data column (0-indexed)
-COLS_PER_ITEM   = 3                        # columns per excerpt: [tags, valence, arousal]
-N_EXCERPTS      = 20                       # excerpts per session
-VA_SCALE_MIN    = 1                        # minimum valid VA rating
-VA_SCALE_MAX    = 6                        # maximum valid VA rating
-
-# Thresholds — adjust as needed, see comments for justification
-MD_CHI2_ALPHA   = 0.001   # χ² significance level for standard MD (0.001 = strict)
-MD_ROBUST_ALPHA = 0.001   # same for robust MCD-based MD
-CORR_THRESHOLD  = 0.10    # person-total r below this → flagged (very low agreement)
-IRV_LOW_THRESH  = 0.25    # IRV as fraction of scale range — below this = straight-lining
-IRV_HIGH_THRESH = 4.5     # above this (on a 1-6 scale) = random/noisy
+# Thresholds
+MD_CHI2_ALPHA   = 0.001   # χ² level for classical MD
+MD_ROBUST_ALPHA = 0.001   # χ² level for robust (MCD) MD
+CORR_THRESHOLD  = 0.10    # person-total r below this → flagged
+IRV_LOW_THRESH  = 0.25    # SD below this (straight-lining) — see note in compute_irv
+IRV_HIGH_THRESH = 2.20    # SD above this on a 1–6 scale (near the theoretical max) → random
 LONGSTRING_MIN  = 8       # ≥ N consecutive identical ratings → flagged
-ICC_LOW_THRESH  = 0.20    # excerpts with ICC below this are "contested"
+MIN_VALID_FRAC  = 0.50    # participants with < this fraction of valid ratings → flagged
+MCD_SUPPORT_FRAC = 0.75   # fraction of "clean" participants MCD fits its covariance on
+RANDOM_STATE     = 42
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -81,556 +83,287 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(f'{OUTPUT_DIR}/cleaning_plots', exist_ok=True)
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── LOADING ───────────────────────────────────────────────────────────────────
+def load_all_sessions(csv_glob):
+    """Parse every session CSV into one participant-level dataframe.
 
-def load_all_sessions(csv_glob: str) -> pd.DataFrame:
-    """Parse every session CSV into a long-format dataframe."""
+    participant_id uses the notebook convention: '{csv_stem}_P{idx:03d}'.
+    alias_id is the short 'S{session}_P{idx:03d}' form used in earlier reports.
+    """
     files = sorted(glob.glob(csv_glob))
     if not files:
         raise FileNotFoundError(
-            f"No CSVs found matching '{csv_glob}'. "
-            "Update CSV_GLOB in the CONFIG block."
-        )
+            f"No CSVs match '{csv_glob}'. Update CSV_GLOB in CONFIG.")
     print(f"Found {len(files)} session file(s): {[Path(f).name for f in files]}")
 
-    all_records = []
-    for session_idx, fpath in enumerate(files):
+    records = []
+    for s_idx, fpath in enumerate(files):
         df_raw = pd.read_csv(fpath, header=0)
-        session_id = Path(fpath).stem
-
+        stem = Path(fpath).stem
         for p_idx, row in df_raw.iterrows():
-            pid = f'S{session_idx+1}_P{p_idx+1:03d}'
-            ratings_val, ratings_aro = [], []
-
+            pid   = f'{stem}_P{p_idx + 1:03d}'
+            alias = f'S{s_idx + 1}_P{p_idx + 1:03d}'
+            rv, ra = [], []
             for i in range(N_EXCERPTS):
                 col = DATA_START_COL + i * COLS_PER_ITEM
                 if col + 2 >= len(row):
-                    ratings_val.append(np.nan)
-                    ratings_aro.append(np.nan)
-                    continue
+                    rv.append(np.nan); ra.append(np.nan); continue
                 try:
-                    val = float(str(row.iloc[col + 1]).strip())
-                    aro = float(str(row.iloc[col + 2]).strip())
-                    # range-check
-                    val = val if VA_SCALE_MIN <= val <= VA_SCALE_MAX else np.nan
-                    aro = aro if VA_SCALE_MIN <= aro <= VA_SCALE_MAX else np.nan
+                    v = float(str(row.iloc[col + 1]).strip())
+                    a = float(str(row.iloc[col + 2]).strip())
+                    v = v if VA_SCALE_MIN <= v <= VA_SCALE_MAX else np.nan
+                    a = a if VA_SCALE_MIN <= a <= VA_SCALE_MAX else np.nan
                 except (ValueError, TypeError):
-                    val = aro = np.nan
-
-                ratings_val.append(val)
-                ratings_aro.append(aro)
-
-            all_records.append({
-                'participant_id': pid,
-                'session'       : session_id,
-                'ratings_val'   : ratings_val,
-                'ratings_aro'   : ratings_aro,
-                'n_valid'       : sum(v is not None and not np.isnan(v)
-                                      for v in ratings_val),
-            })
-
-    return pd.DataFrame(all_records)
+                    v = a = np.nan
+                rv.append(v); ra.append(a)
+            n_valid = int(np.sum(~np.isnan(rv)) + np.sum(~np.isnan(ra)))
+            records.append({'participant_id': pid, 'alias_id': alias,
+                            'session': stem, 'ratings_val': rv, 'ratings_aro': ra,
+                            'n_valid': n_valid})
+    return pd.DataFrame(records)
 
 
-def build_rating_matrix(df_participants: pd.DataFrame) -> np.ndarray:
-    """
-    Stack valence and arousal ratings into a (N_participants × 2*N_excerpts) matrix.
-    Columns are [val_1..val_20, aro_1..aro_20].
-    Rows with too many NaNs are kept — NaN-filling is done with column means.
-    """
-    rows = []
-    for _, r in df_participants.iterrows():
-        rows.append(r['ratings_val'] + r['ratings_aro'])
-    X = np.array(rows, dtype=float)   # (N, 40)
-
-    # Impute remaining NaNs with column mean (needed for covariance estimation)
+def build_rating_matrix(df):
+    """(N × 40) matrix [val_1..val_20, aro_1..aro_20]; NaNs → column mean."""
+    X = np.array([r['ratings_val'] + r['ratings_aro'] for _, r in df.iterrows()],
+                 dtype=float)
     col_means = np.nanmean(X, axis=0)
-    for j in range(X.shape[1]):
-        mask = np.isnan(X[:, j])
-        X[mask, j] = col_means[j]
-
+    idx = np.where(np.isnan(X))
+    X[idx] = np.take(col_means, idx[1])
     return X
 
 
-# ── METHOD 1 + 2: Mahalanobis Distance ────────────────────────────────────────
-
-def compute_mahalanobis_standard(X: np.ndarray) -> np.ndarray:
-    """
-    Classical MD: distance of each participant from the group centroid,
-    using the sample covariance matrix.
-
-    Why: A careless or idiosyncratic participant sits far from the group
-    centre in multivariate rating space.
-
-    Limitation: the sample covariance is itself distorted by outliers,
-    causing the "masking effect" where outliers pull the centroid towards
-    themselves and appear less extreme.
-    """
-    mu  = np.mean(X, axis=0)
-    cov = np.cov(X, rowvar=False)
-
-    # Regularise if near-singular (common with N < p)
-    cov += np.eye(cov.shape[0]) * 1e-6
-
+# ── METHOD 1 & 2: Mahalanobis ─────────────────────────────────────────────────
+def compute_md_standard(X):
+    mu, cov = np.mean(X, axis=0), np.cov(X, rowvar=False)
+    cov += np.eye(cov.shape[0]) * 1e-6            # regularise near-singular
     try:
         cov_inv = np.linalg.inv(cov)
     except np.linalg.LinAlgError:
         cov_inv = np.linalg.pinv(cov)
-
-    dists = np.array([mahalanobis(x, mu, cov_inv) for x in X])
-    return dists
+    return np.array([mahalanobis(x, mu, cov_inv) for x in X])
 
 
-def compute_mahalanobis_robust(X: np.ndarray) -> tuple:
-    """
-    Robust MD using Minimum Covariance Determinant (MCD) estimator.
-
-    Why: MCD fits a covariance matrix on the ~75% of participants that are
-    MOST similar to each other, ignoring the outliers when estimating the
-    'typical' response pattern. This eliminates the masking effect.
-
-    This is the version your supervisor likely intended — it is the
-    standard recommendation in the statistical literature (Rousseeuw &
-    Van Driessen, 1999).
-
-    Returns: (robust_distances, location_estimate, covariance_estimate)
-    """
-    mcd = MinCovDet(support_fraction=0.75, random_state=42)
+def compute_md_robust(X):
+    """Robust MD via Minimum Covariance Determinant (masking-resistant)."""
     try:
-        mcd.fit(X)
+        mcd = MinCovDet(support_fraction=MCD_SUPPORT_FRAC,
+                        random_state=RANDOM_STATE).fit(X)
+        return np.sqrt(mcd.mahalanobis(X))
     except Exception as e:
-        warnings.warn(f"MCD failed ({e}), falling back to standard MD.")
-        dists = compute_mahalanobis_standard(X)
-        return dists, np.mean(X, axis=0), np.cov(X, rowvar=False)
-
-    robust_dists = np.sqrt(mcd.mahalanobis(X))
-    return robust_dists, mcd.location_, mcd.covariance_
+        warnings.warn(f"MCD failed ({e}); falling back to classical MD.")
+        return compute_md_standard(X)
 
 
-def md_threshold(n_dims: int, alpha: float) -> float:
-    """χ²(df=n_dims, p=alpha) cutoff for squared Mahalanobis distance."""
+def md_threshold(n_dims, alpha):
     return np.sqrt(stats.chi2.ppf(1 - alpha, df=n_dims))
 
 
-# ── METHOD 3: Person-Total Correlation ────────────────────────────────────────
+# ── METHOD 3: Person-Total correlation (leave-one-out) ────────────────────────
+def compute_person_total_corr_loo(X):
+    """Pearson r between each participant and the group mean computed WITHOUT them."""
+    n = X.shape[0]
+    total = X.sum(axis=0)
+    out = []
+    for i in range(n):
+        others_mean = (total - X[i]) / (n - 1)
+        if np.std(X[i]) < 1e-12 or np.std(others_mean) < 1e-12:
+            out.append(0.0)                       # constant vector → no agreement info
+        else:
+            out.append(stats.pearsonr(X[i], others_mean)[0])
+    return np.array(out)
 
-def compute_person_total_correlation(X: np.ndarray) -> np.ndarray:
+
+# ── METHOD 4: IRV ─────────────────────────────────────────────────────────────
+def compute_irv(df):
+    """Mean of (SD of valence, SD of arousal) per participant.
+
+    Low  → straight-lining (same answer to everything).
+    High → scattered/random. Max SD on a 1–6 scale is ~2.5 (all mass at 1 & 6),
+    so IRV_HIGH_THRESH is set near that ceiling rather than the >4.5 of v1
+    (which was unreachable and never fired).
     """
-    Pearson r between each participant's full rating vector and
-    the group mean vector.
-
-    Why: A participant who is completely out of step with the group
-    (e.g., consistently gives high arousal where everyone gives low)
-    will have a near-zero or negative correlation.
-
-    Interpretation: r < 0.10 = participant responded very differently
-    from the consensus; r > 0.50 = good agreement.
-    """
-    group_mean = np.mean(X, axis=0)
-    corrs = []
-    for row in X:
-        r, _ = stats.pearsonr(row, group_mean)
-        corrs.append(r)
-    return np.array(corrs)
-
-
-# ── METHOD 4: Intra-Individual Response Variability (IRV) ─────────────────────
-
-def compute_irv(df_participants: pd.DataFrame) -> np.ndarray:
-    """
-    Standard deviation of a participant's valence ratings across all excerpts
-    (and arousal separately). We report the mean of both SDs.
-
-    Why:
-    - Very LOW IRV (< 0.25 of scale range ≈ < 1.25 on a 1-6 scale) means
-      the participant gave nearly the same rating to everything — "straight-lining".
-    - Very HIGH IRV (> ~4.5) means ratings are extremely scattered, possibly
-      random or disengaged.
-
-    Note: IRV alone is not reliable; use in combination with other flags.
-    """
-    irvs = []
-    for _, r in df_participants.iterrows():
+    out = []
+    for _, r in df.iterrows():
         v = np.array([x for x in r['ratings_val'] if not np.isnan(x)])
         a = np.array([x for x in r['ratings_aro'] if not np.isnan(x)])
         sd_v = np.std(v) if len(v) > 1 else np.nan
         sd_a = np.std(a) if len(a) > 1 else np.nan
-        irvs.append(np.nanmean([sd_v, sd_a]))
-    return np.array(irvs)
+        out.append(np.nanmean([sd_v, sd_a]))
+    return np.array(out)
 
 
-# ── METHOD 5: LongString Index ────────────────────────────────────────────────
-
-def compute_longstring(df_participants: pd.DataFrame) -> np.ndarray:
-    """
-    Maximum run of consecutive identical responses in the FULL rating sequence
-    (valence1..valence20, arousal1..arousal20).
-
-    Why: A participant who rapidly clicks the same answer for every question
-    will have a long run of identical integers. Real reflective rating of 20
-    excerpts should naturally vary.
-
-    Threshold: ≥ 8 consecutive identical values is suspicious for a 40-item
-    (20 val + 20 aro) questionnaire. Adjust to your scale length.
-    """
-    longstrings = []
-    for _, r in df_participants.iterrows():
-        seq = [round(x) for x in r['ratings_val'] + r['ratings_aro']
+# ── METHOD 5: LongString ──────────────────────────────────────────────────────
+def compute_longstring(df):
+    """Longest run of identical consecutive ratings across the 40-item sequence."""
+    out = []
+    for _, r in df.iterrows():
+        seq = [round(x) for x in (r['ratings_val'] + r['ratings_aro'])
                if not np.isnan(x)]
-        max_run, cur_run, cur_val = 0, 1, None
-        for v in seq:
-            if v == cur_val:
-                cur_run += 1
-                max_run = max(max_run, cur_run)
-            else:
-                cur_val = v
-                cur_run = 1
-        longstrings.append(max_run)
-    return np.array(longstrings)
+        max_run = cur = 1 if seq else 0
+        for k in range(1, len(seq)):
+            cur = cur + 1 if seq[k] == seq[k - 1] else 1
+            max_run = max(max_run, cur)
+        out.append(max_run)
+    return np.array(out)
 
 
-# ── STIMULUS: ICC + Entropy ────────────────────────────────────────────────────
+# ── PLOTS ─────────────────────────────────────────────────────────────────────
+def make_plots(report, output_dir):
+    fig = plt.figure(figsize=(16, 10))
+    gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.4, wspace=0.3)
 
-def compute_stimulus_icc(df_participants: pd.DataFrame) -> pd.DataFrame:
-    """
-    For each of the 20 excerpt positions, compute:
-    - ICC(2,1): two-way random effects, absolute agreement, single rater
-      (the standard ICC for inter-rater reliability)
-    - Mean valence, mean arousal, SDs
-    - Entropy of valence ratings (spread/disagreement)
+    ax = fig.add_subplot(gs[0, 0])
+    ax.hist(report['md_robust'], bins=25, color='steelblue', edgecolor='white')
+    thr = report['md_robust_threshold'].iloc[0]
+    ax.axvline(thr, color='red', ls='--', label=f'threshold={thr:.1f}')
+    ax.set_title('Robust MD (MCD)'); ax.set_xlabel('robust MD'); ax.legend(fontsize=8)
 
-    Low ICC (<0.20) on an excerpt = listeners disagree strongly on that stimulus.
-    This can mean:
-      (a) the recording genuinely evokes mixed reactions → scientifically interesting
-      (b) the recording was technically poor or ambiguous → candidate for removal
-    """
-    n_items = N_EXCERPTS
-    records = []
+    ax = fig.add_subplot(gs[0, 1])
+    ax.hist(report['md_standard'], bins=25, color='darkorange', edgecolor='white')
+    thr = report['md_standard_threshold'].iloc[0]
+    ax.axvline(thr, color='red', ls='--', label=f'threshold={thr:.1f}')
+    ax.set_title('Classical MD'); ax.set_xlabel('MD'); ax.legend(fontsize=8)
 
-    # Rebuild item-level matrices
-    val_matrix = np.array([r['ratings_val'] for _, r in df_participants.iterrows()])
-    aro_matrix = np.array([r['ratings_aro'] for _, r in df_participants.iterrows()])
+    ax = fig.add_subplot(gs[0, 2])
+    order = report['person_total_corr'].sort_values().index
+    vals  = report.loc[order, 'person_total_corr'].values
+    flg   = report.loc[order, 'flag_person_corr'].values
+    ax.bar(range(len(vals)), vals,
+           color=['red' if f else 'teal' for f in flg])   # colour tracks value
+    ax.axhline(CORR_THRESHOLD, color='red', ls='--', label=f'r={CORR_THRESHOLD}')
+    ax.set_title('Person-Total r (LOO)'); ax.set_xlabel('participants (sorted)')
+    ax.legend(fontsize=8)
 
-    for i in range(n_items):
-        v_col = val_matrix[:, i]
-        a_col = aro_matrix[:, i]
+    ax = fig.add_subplot(gs[1, 0])
+    ax.scatter(range(len(report)), report['irv'],
+               c=['red' if f else 'teal' for f in report['flag_irv']], s=25)
+    ax.axhline(IRV_LOW_THRESH, color='orange', ls='--', label=f'low={IRV_LOW_THRESH}')
+    ax.axhline(IRV_HIGH_THRESH, color='red', ls='--', label=f'high={IRV_HIGH_THRESH}')
+    ax.set_title('IRV (mean SD)'); ax.set_xlabel('participant'); ax.legend(fontsize=8)
 
-        valid_v = v_col[~np.isnan(v_col)]
-        valid_a = a_col[~np.isnan(a_col)]
+    ax = fig.add_subplot(gs[1, 1])
+    order = report['longstring'].sort_values(ascending=False).index
+    vals  = report.loc[order, 'longstring'].values
+    flg   = report.loc[order, 'flag_longstring'].values
+    ax.bar(range(len(vals)), vals,
+           color=['red' if f else 'teal' for f in flg])
+    ax.axhline(LONGSTRING_MIN, color='red', ls='--', label=f'≥{LONGSTRING_MIN}')
+    ax.set_title('LongString'); ax.set_xlabel('participants (sorted)'); ax.legend(fontsize=8)
 
-        # ICC via pingouin if available, else manual two-way random ICC(2,1)
-        icc_v = icc_manual(v_col) if not PINGOUIN_OK else icc_pingouin(v_col, i, 'val')
-        icc_a = icc_manual(a_col) if not PINGOUIN_OK else icc_pingouin(a_col, i, 'aro')
+    ax = fig.add_subplot(gs[1, 2])
+    counts = report['n_flags'].value_counts().sort_index()
+    ax.bar(counts.index.astype(int), counts.values, color='slateblue')
+    ax.axvline(1.5, color='red', ls='--', label='exclusion cut (≥2)')
+    ax.set_title('# methods flagging each participant')
+    ax.set_xlabel('n flags'); ax.set_ylabel('participants'); ax.legend(fontsize=8)
 
-        # Entropy of valence ratings (as a disagreement index)
-        bins = np.arange(VA_SCALE_MIN, VA_SCALE_MAX + 2)
-        hist, _ = np.histogram(valid_v, bins=bins)
-        p = hist / hist.sum() if hist.sum() > 0 else hist
-        p = p[p > 0]
-        entropy_v = -np.sum(p * np.log2(p))
-
-        records.append({
-            'item_position' : i + 1,
-            'valence_mean'  : np.nanmean(v_col),
-            'valence_std'   : np.nanstd(v_col),
-            'arousal_mean'  : np.nanmean(a_col),
-            'arousal_std'   : np.nanstd(a_col),
-            'icc_valence'   : icc_v,
-            'icc_arousal'   : icc_a,
-            'icc_mean'      : np.nanmean([icc_v, icc_a]),
-            'entropy_valence': entropy_v,
-            'n_raters'      : int((~np.isnan(v_col)).sum()),
-            'flag_low_icc'  : (np.nanmean([icc_v, icc_a]) < ICC_LOW_THRESH),
-        })
-
-    return pd.DataFrame(records)
-
-
-def icc_manual(ratings: np.ndarray) -> float:
-    """
-    Compute ICC(2,1) manually when pingouin is not available.
-    One-way random effects model (ICC1).
-    """
-    ratings = ratings[~np.isnan(ratings)]
-    if len(ratings) < 3:
-        return np.nan
-    n = len(ratings)
-    grand_mean = np.mean(ratings)
-    ss_total = np.sum((ratings - grand_mean) ** 2)
-    ss_within = np.sum((ratings - grand_mean) ** 2)  # degenerate one-rater
-    # For a single excerpt column, ICC is just reliability from variance components
-    # Use simple formula: ICC = (MSb - MSw) / (MSb + (k-1)*MSw) with k=1
-    # i.e. the reliability of a single observation, which collapses to var/var
-    variance = np.var(ratings, ddof=1)
-    if variance < 1e-10:
-        return 0.0
-    return float(np.clip(1 - (1 / (1 + variance)), 0, 1))
-
-
-def icc_pingouin(col: np.ndarray, item_idx: int, label: str) -> float:
-    """Compute ICC(2,1) using pingouin."""
-    valid_mask = ~np.isnan(col)
-    if valid_mask.sum() < 3:
-        return np.nan
-    df_icc = pd.DataFrame({
-        'rater' : np.where(valid_mask)[0],
-        'target': [item_idx] * valid_mask.sum(),
-        'score' : col[valid_mask],
-    })
-    try:
-        result = pg.intraclass_corr(data=df_icc, targets='target',
-                                    raters='rater', ratings='score')
-        row = result[result['Type'] == 'ICC2']
-        if len(row):
-            return float(row['ICC'].values[0])
-    except Exception:
-        pass
-    return icc_manual(col)
-
-
-# ── PLOTTING ──────────────────────────────────────────────────────────────────
-
-def make_diagnostic_plots(report: pd.DataFrame, stim_report: pd.DataFrame,
-                           output_dir: str):
-    fig = plt.figure(figsize=(16, 12))
-    gs  = gridspec.GridSpec(2, 3, figure=fig, hspace=0.45, wspace=0.35)
-
-    # 1. Robust MD distribution
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax1.hist(report['md_robust'], bins=20, color='steelblue', edgecolor='white')
-    thresh = report['md_robust_threshold'].iloc[0]
-    ax1.axvline(thresh, color='red', linestyle='--', label=f'threshold={thresh:.2f}')
-    flagged = report[report['flag_md_robust']]
-    ax1.scatter(flagged['md_robust'], np.zeros(len(flagged)) + 0.5,
-                color='red', zorder=5, label='flagged')
-    ax1.set_xlabel('Robust Mahalanobis Distance'); ax1.set_ylabel('Count')
-    ax1.set_title('Robust MD (MCD)'); ax1.legend(fontsize=8)
-
-    # 2. Standard MD distribution
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.hist(report['md_standard'], bins=20, color='darkorange', edgecolor='white')
-    thresh_std = report['md_standard_threshold'].iloc[0]
-    ax2.axvline(thresh_std, color='red', linestyle='--', label=f'threshold={thresh_std:.2f}')
-    ax2.set_xlabel('Standard Mahalanobis Distance'); ax2.set_ylabel('Count')
-    ax2.set_title('Standard MD'); ax2.legend(fontsize=8)
-
-    # 3. Person-Total Correlation
-    ax3 = fig.add_subplot(gs[0, 2])
-    colors = ['red' if v else 'teal' for v in report['flag_person_corr']]
-    ax3.bar(range(len(report)), sorted(report['person_total_corr']), color=sorted(colors))
-    ax3.axhline(CORR_THRESHOLD, color='red', linestyle='--',
-                label=f'threshold r={CORR_THRESHOLD}')
-    ax3.set_xlabel('Participants (sorted)'); ax3.set_ylabel('Person-Total r')
-    ax3.set_title('Person-Total Correlation'); ax3.legend(fontsize=8)
-
-    # 4. IRV scatter
-    ax4 = fig.add_subplot(gs[1, 0])
-    colors_irv = ['red' if v else 'teal' for v in report['flag_irv']]
-    ax4.scatter(range(len(report)), report['irv'], c=colors_irv, s=40)
-    ax4.axhline(IRV_LOW_THRESH, color='orange', linestyle='--',
-                label=f'low={IRV_LOW_THRESH}')
-    ax4.axhline(IRV_HIGH_THRESH, color='red', linestyle='--',
-                label=f'high={IRV_HIGH_THRESH}')
-    ax4.set_xlabel('Participant index'); ax4.set_ylabel('IRV (mean SD)')
-    ax4.set_title('Intra-Individual Response Variability'); ax4.legend(fontsize=8)
-
-    # 5. LongString
-    ax5 = fig.add_subplot(gs[1, 1])
-    colors_ls = ['red' if v else 'teal' for v in report['flag_longstring']]
-    ax5.bar(range(len(report)), sorted(report['longstring'], reverse=True),
-            color=sorted(colors_ls, reverse=True))
-    ax5.axhline(LONGSTRING_MIN, color='red', linestyle='--',
-                label=f'threshold={LONGSTRING_MIN}')
-    ax5.set_xlabel('Participants (sorted)'); ax5.set_ylabel('Max run length')
-    ax5.set_title('LongString Index'); ax5.legend(fontsize=8)
-
-    # 6. Stimulus ICC
-    ax6 = fig.add_subplot(gs[1, 2])
-    icc_vals = stim_report['icc_mean'].fillna(0)
-    colors_icc = ['red' if v else 'steelblue' for v in stim_report['flag_low_icc']]
-    ax6.bar(stim_report['item_position'], icc_vals, color=colors_icc)
-    ax6.axhline(ICC_LOW_THRESH, color='red', linestyle='--',
-                label=f'ICC threshold={ICC_LOW_THRESH}')
-    ax6.set_xlabel('Excerpt position'); ax6.set_ylabel('Mean ICC (val+aro)')
-    ax6.set_title('Stimulus ICC — inter-rater agreement'); ax6.legend(fontsize=8)
-
-    plt.suptitle('Questionnaire Cleaning Report — Diagnostic Overview', fontsize=14)
-    out = f'{output_dir}/cleaning_plots/diagnostic_overview.png'
-    fig.savefig(out, dpi=150, bbox_inches='tight')
-    plt.close()
+    plt.suptitle('Participant Screening — Diagnostic Overview', fontsize=14)
+    out = f'{output_dir}/cleaning_plots/participant_overview.png'
+    fig.savefig(out, dpi=150, bbox_inches='tight'); plt.close()
     print(f'  Saved: {out}')
 
 
-# ── SUMMARY TEXT ──────────────────────────────────────────────────────────────
-
-def write_summary(report: pd.DataFrame, stim_report: pd.DataFrame,
-                  output_dir: str):
-    n_total    = len(report)
-    flagged_md = report['flag_md_robust'].sum()
-    flagged_combo = report['flag_combined'].sum()
-    flagged_stim  = stim_report['flag_low_icc'].sum()
-
+# ── SUMMARY ───────────────────────────────────────────────────────────────────
+def write_summary(report, output_dir):
+    n = len(report)
     lines = [
-        "QUESTIONNAIRE CLEANING REPORT",
-        "=" * 60,
-        f"Total participants screened : {n_total}",
-        "",
-        "── PARTICIPANT-LEVEL FLAGS ──────────────────────────────",
-        f"  Robust MD (MCD, α={MD_ROBUST_ALPHA})  : "
-        f"{flagged_md} flagged ({100*flagged_md/n_total:.0f}%)",
-        f"  Standard MD (α={MD_CHI2_ALPHA})        : "
-        f"{report['flag_md_standard'].sum()} flagged",
-        f"  Person-Total r < {CORR_THRESHOLD}        : "
-        f"{report['flag_person_corr'].sum()} flagged",
-        f"  IRV out of range              : {report['flag_irv'].sum()} flagged",
-        f"  LongString ≥ {LONGSTRING_MIN}              : "
-        f"{report['flag_longstring'].sum()} flagged",
-        f"  COMBINED (≥2 methods agree)   : {flagged_combo} flagged",
-        "",
-        "── FLAGGED PARTICIPANTS (combined) ─────────────────────",
+        "PARTICIPANT SCREENING REPORT", "=" * 60,
+        f"Total participants screened : {n}", "",
+        "── FLAGS PER METHOD ─────────────────────────────────────",
+        f"  Robust MD (MCD, α={MD_ROBUST_ALPHA})   : {int(report['flag_md_robust'].sum())}",
+        f"  Classical MD (α={MD_CHI2_ALPHA})       : {int(report['flag_md_standard'].sum())}",
+        f"  Person-Total r < {CORR_THRESHOLD} (LOO)  : {int(report['flag_person_corr'].sum())}",
+        f"  IRV out of [{IRV_LOW_THRESH}, {IRV_HIGH_THRESH}] : {int(report['flag_irv'].sum())}",
+        f"  LongString ≥ {LONGSTRING_MIN}               : {int(report['flag_longstring'].sum())}",
+        f"  Incomplete (< {int(MIN_VALID_FRAC*100)}% valid)     : {int(report['flag_incomplete'].sum())}",
+        f"  COMBINED (≥2 methods)          : {int(report['flag_combined'].sum())}", "",
+        "── EXCLUSION CANDIDATES (≥2 methods) ────────────────────",
     ]
-
-    for _, row in report[report['flag_combined']].iterrows():
-        flags = []
-        if row['flag_md_robust']:   flags.append('MD-robust')
-        if row['flag_md_standard']: flags.append('MD-std')
-        if row['flag_person_corr']: flags.append('person-r')
-        if row['flag_irv']:         flags.append('IRV')
-        if row['flag_longstring']:  flags.append('LongString')
-        lines.append(f"  {row['participant_id']}  ({', '.join(flags)})")
-        lines.append(f"    MD_robust={row['md_robust']:.2f}  "
-                     f"person_r={row['person_total_corr']:.3f}  "
-                     f"IRV={row['irv']:.2f}  LongString={int(row['longstring'])}")
-
+    for _, r in report[report['flag_combined']].iterrows():
+        methods = [m for m, c in [('MD-robust', 'flag_md_robust'),
+                                  ('MD-std', 'flag_md_standard'),
+                                  ('person-r', 'flag_person_corr'),
+                                  ('IRV', 'flag_irv'),
+                                  ('LongString', 'flag_longstring')] if r[c]]
+        lines.append(f"  {r['participant_id']}  ({r['alias_id']})  [{', '.join(methods)}]")
+        lines.append(f"    MD_rob={r['md_robust']:.2f}  person_r={r['person_total_corr']:.3f}  "
+                     f"IRV={r['irv']:.2f}  LongString={int(r['longstring'])}  n_valid={int(r['n_valid'])}")
     lines += [
-        "",
-        "── STIMULUS-LEVEL FLAGS ─────────────────────────────────",
-        f"  Excerpts with ICC < {ICC_LOW_THRESH} : {flagged_stim} / {len(stim_report)}",
-        "",
-        "── FLAGGED STIMULI ──────────────────────────────────────",
+        "", "── METHODS-SECTION TEXT ─────────────────────────────────",
+        "  Screening: classical + robust (MCD) Mahalanobis distance,",
+        "  leave-one-out person-total correlation, intra-individual response",
+        "  variability, and LongString index. Participants flagged by ≥2 of",
+        "  these independent detectors were excluded. Report N screened /",
+        "  N excluded / N retained and cite Goldammer et al. (2020).",
+        "  NOTE: MD χ² cutoff assumes multivariate normality (a convention for",
+        "  Likert data); the ≥2-method rule is what governs exclusion.",
     ]
-    for _, row in stim_report[stim_report['flag_low_icc']].iterrows():
-        lines.append(
-            f"  Item {int(row['item_position']):02d}  ICC={row['icc_mean']:.3f}  "
-            f"val={row['valence_mean']:.2f}±{row['valence_std']:.2f}  "
-            f"aro={row['arousal_mean']:.2f}±{row['arousal_std']:.2f}"
-        )
-
-    lines += [
-        "",
-        "── RECOMMENDED ACTIONS ──────────────────────────────────",
-        "  1. Do NOT auto-remove. Inspect each flagged participant manually.",
-        "  2. Participants flagged by ≥2 independent methods are strong",
-        "     candidates for exclusion. Report N removed and reason.",
-        "  3. For flagged stimuli: examine whether the recording was",
-        "     technically adequate. Low ICC may mean genuine aesthetic",
-        "     ambiguity (interesting finding) rather than bad data.",
-        "  4. For your methods section, report:",
-        f"     - Screening criteria used (Robust MD, α={MD_ROBUST_ALPHA},",
-        "       combined flag ≥2 methods)",
-        f"     - N participants screened, N excluded, N retained",
-        "     - Whether stimulus removal was performed and on what basis",
-        "     - Reference: Goldammer et al. (2020), PLOS ONE, Mahalanobis",
-        "       distance + personal reliability as most effective detectors.",
-    ]
-
     text = "\n".join(lines)
-    out = f'{output_dir}/cleaning_summary.txt'
-    with open(out, 'w') as f:
+    with open(f'{output_dir}/cleaning_summary.txt', 'w') as f:
         f.write(text)
-    print(f'  Saved: {out}')
-    print()
-    print(text)
+    print(f'  Saved: {output_dir}/cleaning_summary.txt\n'); print(text)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def main():
     print("=" * 60)
-    print("  Questionnaire Cleaning — Violin Emotion Study")
+    print("  Participant Screening — Violin Emotion Study")
     print("=" * 60)
 
-    # 1. Load data
     print("\n[1] Loading session CSVs …")
-    df_parts = load_all_sessions(CSV_GLOB)
-    print(f"    {len(df_parts)} participants loaded")
+    df = load_all_sessions(CSV_GLOB)
+    print(f"    {len(df)} participants loaded")
 
-    # 2. Build rating matrix
     print("\n[2] Building participant × (valence+arousal) matrix …")
-    X = build_rating_matrix(df_parts)
+    X = build_rating_matrix(df)
     n, d = X.shape
-    print(f"    Matrix shape: {n} participants × {d} dimensions")
+    print(f"    Matrix shape: {n} × {d}")
 
-    # 3. Compute all screening indices
     print("\n[3] Computing screening indices …")
-
-    md_std   = compute_mahalanobis_standard(X)
-    thresh_std = md_threshold(d, MD_CHI2_ALPHA)
-    print(f"    Standard MD  — threshold = {thresh_std:.2f}  "
-          f"flagged = {(md_std > thresh_std).sum()}")
-
-    md_rob, mcd_loc, mcd_cov = compute_mahalanobis_robust(X)
-    thresh_rob = md_threshold(d, MD_ROBUST_ALPHA)
-    print(f"    Robust MD    — threshold = {thresh_rob:.2f}  "
-          f"flagged = {(md_rob > thresh_rob).sum()}")
-
-    corrs = compute_person_total_correlation(X)
-    print(f"    Person-Total r — flagged (r<{CORR_THRESHOLD}) = "
-          f"{(corrs < CORR_THRESHOLD).sum()}")
-
-    irvs = compute_irv(df_parts)
+    md_std = compute_md_standard(X); thr_std = md_threshold(d, MD_CHI2_ALPHA)
+    print(f"    Classical MD — threshold={thr_std:.2f}  flagged={(md_std > thr_std).sum()}")
+    md_rob = compute_md_robust(X);   thr_rob = md_threshold(d, MD_ROBUST_ALPHA)
+    print(f"    Robust MD    — threshold={thr_rob:.2f}  flagged={(md_rob > thr_rob).sum()}")
+    corrs = compute_person_total_corr_loo(X)
+    print(f"    Person-Total r (LOO) — flagged={(corrs < CORR_THRESHOLD).sum()}")
+    irvs = compute_irv(df)
     flag_irv = (irvs < IRV_LOW_THRESH) | (irvs > IRV_HIGH_THRESH)
-    print(f"    IRV — flagged = {flag_irv.sum()}")
+    print(f"    IRV — flagged={flag_irv.sum()}")
+    ls = compute_longstring(df)
+    print(f"    LongString — flagged={(ls >= LONGSTRING_MIN).sum()}")
 
-    ls = compute_longstring(df_parts)
-    print(f"    LongString — flagged (≥{LONGSTRING_MIN}) = {(ls >= LONGSTRING_MIN).sum()}")
+    print("\n[4] Building report …")
+    rep = df[['participant_id', 'alias_id', 'session', 'n_valid']].copy()
+    rep['md_standard'] = md_std; rep['md_standard_threshold'] = thr_std
+    rep['flag_md_standard'] = md_std > thr_std
+    rep['md_robust'] = md_rob;   rep['md_robust_threshold'] = thr_rob
+    rep['flag_md_robust'] = md_rob > thr_rob
+    rep['person_total_corr'] = corrs; rep['flag_person_corr'] = corrs < CORR_THRESHOLD
+    rep['irv'] = irvs; rep['flag_irv'] = flag_irv
+    rep['longstring'] = ls; rep['flag_longstring'] = ls >= LONGSTRING_MIN
+    max_valid = 2 * N_EXCERPTS
+    rep['flag_incomplete'] = rep['n_valid'] < (MIN_VALID_FRAC * max_valid)
 
-    # 4. Build participant report
-    print("\n[4] Building participant report …")
-    report = df_parts[['participant_id', 'session', 'n_valid']].copy()
-    report['md_standard']           = md_std
-    report['md_standard_threshold'] = thresh_std
-    report['flag_md_standard']      = md_std > thresh_std
-    report['md_robust']             = md_rob
-    report['md_robust_threshold']   = thresh_rob
-    report['flag_md_robust']        = md_rob > thresh_rob
-    report['person_total_corr']     = corrs
-    report['flag_person_corr']      = corrs < CORR_THRESHOLD
-    report['irv']                   = irvs
-    report['flag_irv']              = flag_irv
-    report['longstring']            = ls
-    report['flag_longstring']       = ls >= LONGSTRING_MIN
-    # Combined flag: ≥2 independent methods agree
+    # Combined flag: ≥2 of the independent behavioural/statistical detectors.
+    # (Classical MD is excluded — redundant with robust MD. Incomplete is a
+    #  separate data-quality flag, not a carelessness detector.)
     flag_cols = ['flag_md_robust', 'flag_person_corr', 'flag_irv', 'flag_longstring']
-    report['n_flags']               = report[flag_cols].sum(axis=1)
-    report['flag_combined']         = report['n_flags'] >= 2
+    rep['n_flags'] = rep[flag_cols].sum(axis=1)
+    rep['flag_combined'] = rep['n_flags'] >= 2
+    rep = rep.sort_values('md_robust', ascending=False).reset_index(drop=True)
 
-    report = report.sort_values('md_robust', ascending=False).reset_index(drop=True)
+    rep.to_csv(f'{OUTPUT_DIR}/cleaning_report_participants.csv', index=False)
+    print(f"    Saved: {OUTPUT_DIR}/cleaning_report_participants.csv")
 
-    out_p = f'{OUTPUT_DIR}/cleaning_report_participants.csv'
-    report.to_csv(out_p, index=False)
-    print(f"    Saved: {out_p}")
+    excl = rep.loc[rep['flag_combined'], ['participant_id', 'alias_id', 'n_flags']]
+    excl.to_csv(f'{OUTPUT_DIR}/excluded_participant_ids.csv', index=False)
+    print(f"    Saved: {OUTPUT_DIR}/excluded_participant_ids.csv  "
+          f"({len(excl)} exclusion candidates)")
 
-    # 5. Build stimulus report
-    print("\n[5] Computing stimulus-level ICC …")
-    stim_report = compute_stimulus_icc(df_parts)
-
-    out_s = f'{OUTPUT_DIR}/cleaning_report_stimuli.csv'
-    stim_report.to_csv(out_s, index=False)
-    print(f"    Saved: {out_s}")
-
-    # 6. Plots
-    print("\n[6] Generating diagnostic plots …")
-    make_diagnostic_plots(report, stim_report, OUTPUT_DIR)
-
-    # 7. Summary
-    print("\n[7] Writing summary report …")
-    write_summary(report, stim_report, OUTPUT_DIR)
-
-    print("\n✅ Cleaning analysis complete.")
-    print(f"   Results in: {os.path.abspath(OUTPUT_DIR)}/")
+    print("\n[5] Plots …");   make_plots(rep, OUTPUT_DIR)
+    print("\n[6] Summary …"); write_summary(rep, OUTPUT_DIR)
+    print(f"\n✅ Done. Results in {os.path.abspath(OUTPUT_DIR)}/")
 
 
 if __name__ == '__main__':
