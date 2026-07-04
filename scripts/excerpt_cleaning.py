@@ -1,1 +1,457 @@
-{"metadata":{"kernelspec":{"language":"python","display_name":"Python 3","name":"python3"},"language_info":{"name":"python","version":"3.12.13","mimetype":"text/x-python","codemirror_mode":{"name":"ipython","version":3},"pygments_lexer":"ipython3","nbconvert_exporter":"python","file_extension":".py"},"kaggle":{"accelerator":"none","dataSources":[{"sourceType":"datasetVersion","sourceId":16146628},{"sourceType":"datasetVersion","sourceId":17556338}],"dockerImageVersionId":31429,"isInternetEnabled":true,"language":"python","sourceType":"notebook","isGpuEnabled":false}},"nbformat_minor":4,"nbformat":4,"cells":[{"cell_type":"code","source":"\"\"\"\nexcerpt_cleaning.py  —  stimulus-level quality control for the violin study\n─────────────────────────────────────────────────────────────────────────────\nStandalone companion to questionnaire_cleaning.py. Where that script screens\nPARTICIPANTS, this one screens EXCERPTS (stimuli). It does NOT read the notebook\nor any of its outputs — it re-parses the same questionnaire CSVs and re-derives\nthe excerpt/condition/piece mapping internally (embedded below), so it can be run\non its own.\n\nWHY THIS EXISTS\n  v1's questionnaire_cleaning.py tried to flag excerpts with a per-column \"ICC\"\n  that was mathematically invalid (a monotonic function of variance, computed on\n  a single column — the opposite of what ICC means), so it never flagged anything.\n  This script replaces that with correct, citable stimulus diagnostics.\n\nWHAT IT COMPUTES  (one row per excerpt unless noted)\n  1. Coverage        — n_raters per excerpt (design: MEC/EXP appear in 2 sessions,\n                       EXG in 1, so EXG excerpts legitimately have ~half the raters).\n  2. Dispersion      — valence/arousal SD and IQR (how spread the ratings are).\n  3. rWG agreement   — James/Demaree/Wolf within-group agreement vs a uniform null\n                       on a 6-point scale (1 = perfect agreement, ~0 = none).\n  4. Entropy         — Shannon entropy of the emotion-tag distribution (label\n                       disagreement) and of the valence histogram.\n  5. Bimodality      — Hartigan's dip test (if `diptest` installed) else Sarle's\n                       bimodality coefficient. Separates \"genuinely split\" (two\n                       camps → interesting) from \"uniformly uncertain\" (flat).\n  6. Panel ICC(1,k)  — ONE overall reliability figure for valence and for arousal,\n                       via one-way ANOVA (correct model here: each excerpt is rated\n                       by a DIFFERENT random set of listeners, so ICC(1), not ICC(2)).\n  7. Manipulation    — per PIECE, whether mean arousal follows the expected\n     check             MEC ≤ EXP ≤ EXG ordering (expressive intensity → arousal).\n                       A piece whose EXG is not more arousing than its MEC is a\n                       manipulation-failure candidate. Kruskal–Wallis tests whether\n                       the three conditions differ at all for that piece.\n\nPHILOSOPHY (read before removing anything)\n  Removing an excerpt removes it for every participant and shrinks an already tiny\n  60-excerpt design, so this script FLAGS, it does not auto-remove. Disagreement\n  alone is NOT grounds for removal — it is often the finding. Remove an excerpt\n  only for an INDEPENDENT reason: a technical fault in the recording, or a clear\n  manipulation failure. Report every flag and your decision transparently.\n\nUSAGE\n  1. Edit CONFIG (CSV_GLOB, OUTPUT_DIR). The embedded EXCERPT_MAP is keyed by CSV\n     *basename*, so only the folder in CSV_GLOB needs to match your machine.\n  2. python excerpt_cleaning.py\n─────────────────────────────────────────────────────────────────────────────\n\"\"\"\n\nimport os, glob, re, warnings\nfrom pathlib import Path\nfrom collections import Counter\n\nimport numpy as np\nimport pandas as pd\nfrom scipy import stats\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nimport matplotlib.gridspec as gridspec\n\ntry:\n    from diptest import diptest as _diptest\n    DIP_OK = True\nexcept Exception:\n    DIP_OK = False\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  CONFIG\n# ═══════════════════════════════════════════════════════════════════════════════\nCSV_GLOB = '/kaggle/input/datasets/george031218732003/violin-thesis-forms/Forms/questionnaire_*.csv'\nOUTPUT_DIR     = '/kaggle/working/excerpt_cleaning_output'\nDATA_START_COL = 3\nCOLS_PER_ITEM  = 3\nN_EXCERPTS     = 20\nVA_SCALE_MIN, VA_SCALE_MAX = 1, 6\nN_SCALE_POINTS = 6           # for rWG expected-variance null\n\n# Flag thresholds (diagnostic, not automatic removal)\nRWG_LOW        = 0.60        # rWG below this on val OR aro → low-agreement excerpt\nSD_HIGH        = 1.40        # rating SD above this → high-dispersion excerpt\nDIP_P          = 0.05        # dip-test p below this → significantly bimodal\nBC_BIMODAL     = 0.555       # Sarle's coefficient above this → bimodal (fallback)\nKW_P           = 0.05        # Kruskal–Wallis p above this → conditions indistinguishable\n\n# ─── EMBEDDED MAPPING (keyed by CSV basename; mirrors the notebook CONFIG) ─────\nCONDITIONS = {'MEC': 'Mechanical', 'EXP': 'Expressive', 'EXG': 'Exaggerated'}\nEMOTION_LABELS = ['Tenderness', 'Nostalgia', 'Peacefulness', 'Power',\n                  'Joyful Activation', 'Tension', 'Sadness', 'Neutral']\nGREEK_TO_ENGLISH = {\n    'Χαρά / Ενέργεια (Joyful Activation)': 'Joyful Activation',\n    'Γαλήνη (Peacefulness)': 'Peacefulness', 'Νοσταλγία (Nostalgia)': 'Nostalgia',\n    'Θλίψη (Sadness)': 'Sadness', 'Τρυφερότητα (Tenderness)': 'Tenderness',\n    'Δύναμη (Power)': 'Power', 'Ένταση (Tension)': 'Tension',\n    'Ουδέτερο (Neutral)': 'Neutral',\n}\nEXCERPT_MAP = {\n    'questionnaire_1.csv': ['Bach_Adagio_S1_MEC', 'Bruch_VC1_EXG', 'Cinema_Paradiso_EXP',\n        'Don_Juan_EXG', 'Godfather_MEC', 'La_Vita_E_Bella_MEC', 'Meditation_Thais_EXP',\n        'Mendelssohn_VC_Mvt2_MEC', 'Mozart_VC3_EXG', 'Mozart_VC4_MEC', 'Schindlers_List_MEC',\n        'Secret_Garden_EXP', 'Shostakovich_SQ8_exrpt1_EXP', 'Shostakovich_SQ8_exrpt2_MEC',\n        'Shostakovich_SQ8_exrpt3_EXG', 'Shostakovich_Sym5_Mvt1_MEC', 'Shostakovich_Sym5_Mvt3_EXP',\n        'Shostakovich_VC1_EXP', 'Tanzil_Serenade_EXP', 'Vitali_Chaconne_EXP'],\n    'questionnaire_2.csv': ['Bach_Adagio_S1_EXG', 'Bruch_VC1_EXP', 'Cinema_Paradiso_EXP',\n        'Don_Juan_EXP', 'Godfather_EXG', 'La_Vita_E_Bella_EXG', 'Meditation_Thais_MEC',\n        'Mendelssohn_VC_Mvt2_EXG', 'Mozart_VC3_EXP', 'Mozart_VC4_MEC', 'Schindlers_List_MEC',\n        'Secret_Garden_EXP', 'Shostakovich_SQ8_exrpt1_EXP', 'Shostakovich_SQ8_exrpt2_MEC',\n        'Shostakovich_SQ8_exrpt3_EXP', 'Shostakovich_Sym5_Mvt1_MEC', 'Shostakovich_Sym5_Mvt3_MEC',\n        'Shostakovich_VC1_MEC', 'Tanzil_Serenade_EXP', 'Vitali_Chaconne_MEC'],\n    'questionnaire_3.csv': ['Bach_Adagio_S1_EXP', 'Bruch_VC1_EXP', 'Cinema_Paradiso_MEC',\n        'Don_Juan_EXP', 'Godfather_EXP', 'La_Vita_E_Bella_EXP', 'Meditation_Thais_MEC',\n        'Mendelssohn_VC_Mvt2_EXP', 'Mozart_VC3_EXP', 'Mozart_VC4_EXG', 'Schindlers_List_EXG',\n        'Secret_Garden_MEC', 'Shostakovich_SQ8_exrpt1_MEC', 'Shostakovich_SQ8_exrpt2_EXG',\n        'Shostakovich_SQ8_exrpt3_EXP', 'Shostakovich_Sym5_Mvt1_EXG', 'Shostakovich_Sym5_Mvt3_MEC',\n        'Shostakovich_VC1_MEC', 'Tanzil_Serenade_MEC', 'Vitali_Chaconne_MEC'],\n    'questionnaire_4.csv': ['Bach_Adagio_S1_EXP', 'Bruch_VC1_MEC', 'Cinema_Paradiso_MEC',\n        'Don_Juan_MEC', 'Godfather_EXP', 'La_Vita_E_Bella_EXP', 'Meditation_Thais_EXG',\n        'Mendelssohn_VC_Mvt2_EXP', 'Mozart_VC3_MEC', 'Mozart_VC4_EXP', 'Schindlers_List_EXP',\n        'Secret_Garden_MEC', 'Shostakovich_SQ8_exrpt1_MEC', 'Shostakovich_SQ8_exrpt2_EXP',\n        'Shostakovich_SQ8_exrpt3_MEC', 'Shostakovich_Sym5_Mvt1_EXP', 'Shostakovich_Sym5_Mvt3_EXG',\n        'Shostakovich_VC1_EXG', 'Tanzil_Serenade_MEC', 'Vitali_Chaconne_EXG'],\n    'questionnaire_5.csv': ['Bach_Adagio_S1_MEC', 'Bruch_VC1_MEC', 'Cinema_Paradiso_EXG',\n        'Don_Juan_MEC', 'Godfather_MEC', 'La_Vita_E_Bella_MEC', 'Meditation_Thais_EXP',\n        'Mendelssohn_VC_Mvt2_MEC', 'Mozart_VC3_MEC', 'Mozart_VC4_EXP', 'Schindlers_List_EXP',\n        'Secret_Garden_EXG', 'Shostakovich_SQ8_exrpt1_EXG', 'Shostakovich_SQ8_exrpt2_EXP',\n        'Shostakovich_SQ8_exrpt3_MEC', 'Shostakovich_Sym5_Mvt1_EXP', 'Shostakovich_Sym5_Mvt3_EXP',\n        'Shostakovich_VC1_EXP', 'Tanzil_Serenade_EXG', 'Vitali_Chaconne_EXP'],\n}\n# ═══════════════════════════════════════════════════════════════════════════════\n\nos.makedirs(OUTPUT_DIR, exist_ok=True)\nos.makedirs(f'{OUTPUT_DIR}/plots', exist_ok=True)\n\n\ndef condition_of(eid):\n    for c in CONDITIONS:\n        if eid.endswith('_' + c):\n            return c\n    return 'UNKNOWN'\n\n\ndef piece_of(eid):\n    for c in CONDITIONS:\n        if eid.endswith('_' + c):\n            return eid[:-(len(c) + 1)]\n    return eid\n\n\ndef parse_tags(cell):\n    if pd.isna(cell) or str(cell).strip() == '':\n        return []\n    out = []\n    for part in [p.strip() for p in str(cell).split(',')]:\n        if part in GREEK_TO_ENGLISH:\n            out.append(GREEK_TO_ENGLISH[part])\n        else:\n            m = re.search(r'\\(([^)]+)\\)', part)\n            if m and m.group(1).strip() in EMOTION_LABELS:\n                out.append(m.group(1).strip())\n    return out\n\n\n# ── LOAD → long format ────────────────────────────────────────────────────────\ndef load_long(csv_glob):\n    files = sorted(glob.glob(csv_glob))\n    if not files:\n        raise FileNotFoundError(f\"No CSVs match '{csv_glob}'. Update CSV_GLOB.\")\n    print(f\"Found {len(files)} session file(s): {[Path(f).name for f in files]}\")\n    rows = []\n    for fpath in files:\n        base = Path(fpath).name\n        if base not in EXCERPT_MAP:\n            warnings.warn(f\"No excerpt order for {base} — skipping.\"); continue\n        order = EXCERPT_MAP[base]\n        df = pd.read_csv(fpath, header=0)\n        for p_idx, row in df.iterrows():\n            pid = f'{Path(fpath).stem}_P{p_idx + 1:03d}'\n            for i in range(N_EXCERPTS):\n                col = DATA_START_COL + i * COLS_PER_ITEM\n                if col + 2 >= len(row):\n                    break\n                try:\n                    v = float(str(row.iloc[col + 1]).strip())\n                    a = float(str(row.iloc[col + 2]).strip())\n                    v = v if VA_SCALE_MIN <= v <= VA_SCALE_MAX else np.nan\n                    a = a if VA_SCALE_MIN <= a <= VA_SCALE_MAX else np.nan\n                except (ValueError, TypeError):\n                    v = a = np.nan\n                eid = order[i]\n                rows.append({'participant_id': pid, 'excerpt_id': eid,\n                             'piece': piece_of(eid), 'condition': condition_of(eid),\n                             'valence': v, 'arousal': a,\n                             'tags': parse_tags(row.iloc[col])})\n    return pd.DataFrame(rows)\n\n\n# ── metrics ───────────────────────────────────────────────────────────────────\ndef rwg(values):\n    \"\"\"James/Demaree/Wolf single-item rWG vs a uniform null on an N-point scale.\"\"\"\n    v = values[~np.isnan(values)]\n    if len(v) < 2:\n        return np.nan\n    s2 = np.var(v, ddof=1)\n    sigma2_eu = (N_SCALE_POINTS ** 2 - 1) / 12.0     # uniform-null variance\n    return 1.0 - s2 / sigma2_eu                       # may be negative; report raw\n\n\ndef shannon_entropy(counts):\n    c = np.array([x for x in counts if x > 0], dtype=float)\n    if c.sum() == 0:\n        return 0.0\n    p = c / c.sum()\n    return float(-np.sum(p * np.log2(p)))\n\n\ndef bimodality(values):\n    \"\"\"Return (is_bimodal, statistic, pvalue_or_nan, method).\"\"\"\n    v = values[~np.isnan(values)]\n    if len(v) < 4 or np.var(v) < 1e-9:\n        return False, np.nan, np.nan, 'n/a'\n    if DIP_OK:\n        d, p = _diptest(v.astype(float))\n        return (p < DIP_P), float(d), float(p), 'dip'\n    # Sarle's bimodality coefficient fallback\n    n = len(v)\n    g = stats.skew(v, bias=False)\n    k = stats.kurtosis(v, fisher=True, bias=False)\n    denom = k + 3 * (n - 1) ** 2 / ((n - 2) * (n - 3)) if n > 3 else np.nan\n    bc = (g ** 2 + 1) / denom if denom and denom > 0 else np.nan\n    return (bc is not np.nan and bc > BC_BIMODAL), float(bc), np.nan, 'BC'\n\n\ndef panel_icc1(long_df, value_col):\n    \"\"\"Overall ICC(1) and ICC(1,k) via one-way ANOVA (targets = excerpts).\n\n    Correct model here because each excerpt is rated by a different random set\n    of listeners (raters are NOT crossed with targets).\n    \"\"\"\n    d = long_df[['excerpt_id', value_col]].dropna()\n    groups = [g[value_col].values for _, g in d.groupby('excerpt_id')]\n    groups = [g for g in groups if len(g) > 0]\n    m = len(groups)\n    N = sum(len(g) for g in groups)\n    if m < 2 or N <= m:\n        return np.nan, np.nan, np.nan\n    grand = np.concatenate(groups).mean()\n    ss_b = sum(len(g) * (g.mean() - grand) ** 2 for g in groups)\n    ss_w = sum(((g - g.mean()) ** 2).sum() for g in groups)\n    ms_b = ss_b / (m - 1)\n    ms_w = ss_w / (N - m)\n    # unbalanced k0 correction\n    ni = np.array([len(g) for g in groups])\n    k0 = (N - (ni ** 2).sum() / N) / (m - 1)\n    icc1 = (ms_b - ms_w) / (ms_b + (k0 - 1) * ms_w) if (ms_b + (k0 - 1) * ms_w) else np.nan\n    icc1k = (ms_b - ms_w) / ms_b if ms_b else np.nan\n    return float(icc1), float(icc1k), float(k0)\n\n\n# ── EXCERPT-LEVEL REPORT ──────────────────────────────────────────────────────\ndef build_excerpt_report(long_df):\n    recs = []\n    for eid, g in long_df.groupby('excerpt_id'):\n        v = g['valence'].values\n        a = g['arousal'].values\n        tag_counts = Counter(t for tags in g['tags'] for t in tags)\n        val_hist = np.histogram(v[~np.isnan(v)],\n                                bins=np.arange(VA_SCALE_MIN, VA_SCALE_MAX + 2))[0]\n        bim_v = bimodality(v)\n        rwg_v, rwg_a = rwg(v), rwg(a)\n        sd_v = np.nanstd(v, ddof=1) if np.sum(~np.isnan(v)) > 1 else np.nan\n        sd_a = np.nanstd(a, ddof=1) if np.sum(~np.isnan(a)) > 1 else np.nan\n        low_agree = (np.nanmin([rwg_v, rwg_a]) < RWG_LOW)\n        high_disp = (np.nanmax([sd_v, sd_a]) > SD_HIGH)\n        recs.append({\n            'excerpt_id': eid, 'piece': piece_of(eid), 'condition': condition_of(eid),\n            'n_raters': int(np.sum(~np.isnan(v))),\n            'valence_mean': np.nanmean(v), 'valence_sd': sd_v,\n            'arousal_mean': np.nanmean(a), 'arousal_sd': sd_a,\n            'valence_iqr': np.nanpercentile(v, 75) - np.nanpercentile(v, 25)\n                           if np.sum(~np.isnan(v)) else np.nan,\n            'rwg_valence': rwg_v, 'rwg_arousal': rwg_a,\n            'tag_entropy': shannon_entropy(list(tag_counts.values())),\n            'valence_entropy': shannon_entropy(val_hist),\n            'bimodal_valence': bim_v[0], 'bimodal_stat': bim_v[1],\n            'bimodal_p': bim_v[2], 'bimodal_method': bim_v[3],\n            'top_tags': tag_counts.most_common(3),\n            'flag_low_agreement': bool(low_agree),\n            'flag_high_dispersion': bool(high_disp),\n            # \"contested\" = disagreement present; sub-type tells you what kind\n            'contested_type': ('split/bimodal' if bim_v[0]\n                               else ('flat/uncertain' if (low_agree or high_disp)\n                                     else 'consensus')),\n        })\n    df = pd.DataFrame(recs).sort_values(['piece', 'condition']).reset_index(drop=True)\n    return df\n\n\n# ── PIECE-LEVEL MANIPULATION CHECK ────────────────────────────────────────────\ndef build_manipulation_report(long_df):\n    \"\"\"Per piece: does mean arousal follow MEC ≤ EXP ≤ EXG (expressive intensity)?\"\"\"\n    recs = []\n    for piece, g in long_df.groupby('piece'):\n        means = {c: g.loc[g['condition'] == c, 'arousal'].mean() for c in CONDITIONS}\n        vmeans = {c: g.loc[g['condition'] == c, 'valence'].mean() for c in CONDITIONS}\n        have = [c for c in ['MEC', 'EXP', 'EXG'] if not np.isnan(means[c])]\n        # Kruskal–Wallis across available conditions (response-level arousal)\n        samples = [g.loc[g['condition'] == c, 'arousal'].dropna().values for c in have]\n        samples = [s for s in samples if len(s) > 0]\n        if len(samples) >= 2 and all(len(s) >= 3 for s in samples):\n            kw_h, kw_p = stats.kruskal(*samples)\n        else:\n            kw_h, kw_p = np.nan, np.nan\n        monotonic = (not np.isnan(means['MEC']) and not np.isnan(means['EXP'])\n                     and not np.isnan(means['EXG'])\n                     and means['MEC'] <= means['EXP'] <= means['EXG'])\n        inversion = (not np.isnan(means['MEC']) and not np.isnan(means['EXG'])\n                     and means['EXG'] < means['MEC'])\n        recs.append({\n            'piece': piece,\n            'arousal_MEC': means['MEC'], 'arousal_EXP': means['EXP'], 'arousal_EXG': means['EXG'],\n            'valence_MEC': vmeans['MEC'], 'valence_EXP': vmeans['EXP'], 'valence_EXG': vmeans['EXG'],\n            'delta_EXG_minus_MEC': (means['EXG'] - means['MEC'])\n                                   if not (np.isnan(means['EXG']) or np.isnan(means['MEC'])) else np.nan,\n            'kw_H': kw_h, 'kw_p': kw_p,\n            'arousal_monotonic': bool(monotonic),\n            'flag_inversion': bool(inversion),                 # EXG less arousing than MEC\n            'flag_conditions_indistinct': bool(not np.isnan(kw_p) and kw_p > KW_P),\n        })\n    return pd.DataFrame(recs).sort_values('delta_EXG_minus_MEC').reset_index(drop=True)\n\n\n# ── PLOTS ─────────────────────────────────────────────────────────────────────\ndef make_plots(exc, man, icc, output_dir):\n    fig = plt.figure(figsize=(16, 10))\n    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)\n\n    ax = fig.add_subplot(gs[0, 0])\n    colors = ['red' if f else 'steelblue' for f in exc['flag_low_agreement']]\n    ax.bar(range(len(exc)), exc['rwg_valence'].fillna(0), color=colors)\n    ax.axhline(RWG_LOW, color='red', ls='--', label=f'rWG={RWG_LOW}')\n    ax.set_title('rWG agreement (valence) per excerpt')\n    ax.set_xlabel('excerpt'); ax.set_ylabel('rWG'); ax.legend(fontsize=8)\n\n    ax = fig.add_subplot(gs[0, 1])\n    ax.scatter(exc['arousal_sd'], exc['valence_sd'],\n               c=['red' if f else 'teal' for f in exc['flag_high_dispersion']], s=30)\n    ax.axvline(SD_HIGH, color='red', ls='--'); ax.axhline(SD_HIGH, color='red', ls='--')\n    ax.set_title('Rating dispersion'); ax.set_xlabel('arousal SD'); ax.set_ylabel('valence SD')\n\n    ax = fig.add_subplot(gs[1, 0])\n    y = np.arange(len(man))\n    colors = ['red' if f else 'seagreen' for f in man['flag_inversion']]\n    ax.barh(y, man['delta_EXG_minus_MEC'].fillna(0), color=colors)\n    ax.axvline(0, color='black', lw=0.8)\n    ax.set_yticks(y); ax.set_yticklabels(man['piece'], fontsize=7)\n    ax.set_title('Manipulation check: arousal(EXG) − arousal(MEC)\\n'\n                 'red = inversion (EXG not more arousing than MEC)')\n    ax.set_xlabel('Δ arousal')\n\n    ax = fig.add_subplot(gs[1, 1])\n    ax.hist(exc['tag_entropy'].dropna(), bins=15, color='mediumpurple', edgecolor='white')\n    ax.set_title('Emotion-tag entropy (label disagreement) per excerpt')\n    ax.set_xlabel('Shannon entropy (bits)'); ax.set_ylabel('excerpts')\n\n    plt.suptitle(f'Excerpt / Stimulus QC — panel ICC(1,k) valence={icc[\"val_k\"]:.2f}, '\n                 f'arousal={icc[\"aro_k\"]:.2f}', fontsize=13)\n    out = f'{output_dir}/plots/excerpt_overview.png'\n    fig.savefig(out, dpi=150, bbox_inches='tight'); plt.close()\n    print(f'  Saved: {out}')\n\n\n# ── SUMMARY ───────────────────────────────────────────────────────────────────\ndef write_summary(exc, man, icc, output_dir):\n    lines = [\n        \"EXCERPT / STIMULUS QC REPORT\", \"=\" * 60,\n        f\"Excerpts analysed : {len(exc)}   |   Pieces : {man.shape[0]}\",\n        f\"Rater coverage    : MEC/EXP≈2 sessions, EXG≈1 session (by design)\", \"\",\n        \"── PANEL RELIABILITY (one-way ICC(1); higher = more reliable) ──\",\n        f\"  Valence : ICC(1)={icc['val_1']:.3f}   ICC(1,k)={icc['val_k']:.3f}  (avg k≈{icc['val_k0']:.0f})\",\n        f\"  Arousal : ICC(1)={icc['aro_1']:.3f}   ICC(1,k)={icc['aro_k']:.3f}  (avg k≈{icc['aro_k0']:.0f})\",\n        \"\",\n        \"── LOW-AGREEMENT / HIGH-DISPERSION EXCERPTS (diagnostic) ──\",\n    ]\n    contested = exc[exc['flag_low_agreement'] | exc['flag_high_dispersion']]\n    if len(contested) == 0:\n        lines.append(\"  none\")\n    for _, r in contested.iterrows():\n        lines.append(f\"  {r['excerpt_id']:32s} [{r['contested_type']}]  \"\n                     f\"rWG_v={r['rwg_valence']:.2f} rWG_a={r['rwg_arousal']:.2f}  \"\n                     f\"SD_v={r['valence_sd']:.2f} SD_a={r['arousal_sd']:.2f}  n={int(r['n_raters'])}\")\n    lines += [\"\", \"── MANIPULATION-CHECK FLAGS (candidate stimulus problems) ──\"]\n    inv = man[man['flag_inversion']]\n    if len(inv) == 0:\n        lines.append(\"  No arousal inversions — every piece's EXG ≥ MEC. Good.\")\n    for _, r in inv.iterrows():\n        lines.append(f\"  {r['piece']:28s} EXG−MEC arousal = {r['delta_EXG_minus_MEC']:+.2f}  \"\n                     f\"(MEC={r['arousal_MEC']:.2f} EXP={r['arousal_EXP']:.2f} EXG={r['arousal_EXG']:.2f})\")\n    indist = man[man['flag_conditions_indistinct']]\n    if len(indist):\n        lines.append(\"\")\n        lines.append(\"  Pieces where the 3 conditions are NOT statistically distinguishable\")\n        lines.append(\"  (Kruskal–Wallis p > %.2f on arousal):\" % KW_P)\n        for _, r in indist.iterrows():\n            lines.append(f\"    {r['piece']:28s} KW p={r['kw_p']:.3f}\")\n    lines += [\n        \"\", \"── HOW TO USE THESE FLAGS ───────────────────────────────\",\n        \"  • Disagreement / low rWG is NOT grounds for removal — it is often the\",\n        \"    finding (a 'split/bimodal' excerpt = two genuine interpretations).\",\n        \"  • Remove an excerpt only for an INDEPENDENT reason: a technical fault\",\n        \"    in the recording, or a manipulation failure (inversion below).\",\n        \"  • Report all flags, your decision per excerpt, and whether any stimulus\",\n        \"    was removed and why.\",\n    ]\n    text = \"\\n\".join(lines)\n    with open(f'{output_dir}/excerpt_summary.txt', 'w') as f:\n        f.write(text)\n    print(f'  Saved: {output_dir}/excerpt_summary.txt\\n'); print(text)\n\n\n# ═══════════════════════════════════════════════════════════════════════════════\ndef main():\n    print(\"=\" * 60)\n    print(\"  Excerpt / Stimulus QC — Violin Emotion Study\")\n    print(\"=\" * 60)\n    print(f\"  (bimodality via {'Hartigan dip test' if DIP_OK else 'Sarle BC fallback — pip install diptest for the dip test'})\")\n\n    print(\"\\n[1] Loading + mapping responses …\")\n    long_df = load_long(CSV_GLOB)\n    print(f\"    {len(long_df)} responses | {long_df['excerpt_id'].nunique()} excerpts | \"\n          f\"{long_df['piece'].nunique()} pieces | {long_df['participant_id'].nunique()} participants\")\n\n    print(\"\\n[2] Panel reliability (ICC(1)) …\")\n    v1, vk, vk0 = panel_icc1(long_df, 'valence')\n    a1, ak, ak0 = panel_icc1(long_df, 'arousal')\n    icc = {'val_1': v1, 'val_k': vk, 'val_k0': vk0,\n           'aro_1': a1, 'aro_k': ak, 'aro_k0': ak0}\n    print(f\"    valence ICC(1,k)={vk:.3f} | arousal ICC(1,k)={ak:.3f}\")\n\n    print(\"\\n[3] Excerpt-level diagnostics …\")\n    exc = build_excerpt_report(long_df)\n    exc.to_csv(f'{OUTPUT_DIR}/excerpt_report.csv', index=False)\n    print(f\"    Saved: {OUTPUT_DIR}/excerpt_report.csv \"\n          f\"({int((exc['flag_low_agreement'] | exc['flag_high_dispersion']).sum())} contested)\")\n\n    print(\"\\n[4] Per-piece manipulation check …\")\n    man = build_manipulation_report(long_df)\n    man.to_csv(f'{OUTPUT_DIR}/piece_manipulation_report.csv', index=False)\n    print(f\"    Saved: {OUTPUT_DIR}/piece_manipulation_report.csv \"\n          f\"({int(man['flag_inversion'].sum())} inversion flag(s))\")\n\n    print(\"\\n[5] Plots …\");   make_plots(exc, man, icc, OUTPUT_DIR)\n    print(\"\\n[6] Summary …\"); write_summary(exc, man, icc, OUTPUT_DIR)\n    print(f\"\\n✅ Done. Results in {os.path.abspath(OUTPUT_DIR)}/\")\n\n\nif __name__ == '__main__':\n    main()","metadata":{"_uuid":"a9d7e80e-1369-4546-8b4f-4a15c3ddda4a","_cell_guid":"4bf0f115-f810-4839-ad30-513c6ce29e89","trusted":true,"collapsed":false,"jupyter":{"outputs_hidden":false},"execution":{"iopub.status.busy":"2026-07-04T10:52:18.770716Z","iopub.execute_input":"2026-07-04T10:52:18.771081Z","iopub.status.idle":"2026-07-04T10:52:20.304646Z","shell.execute_reply.started":"2026-07-04T10:52:18.771052Z","shell.execute_reply":"2026-07-04T10:52:20.303843Z"}},"outputs":[{"name":"stdout","text":"============================================================\n  Excerpt / Stimulus QC — Violin Emotion Study\n============================================================\n  (bimodality via Sarle BC fallback — pip install diptest for the dip test)\n\n[1] Loading + mapping responses …\nFound 5 session file(s): ['questionnaire_1.csv', 'questionnaire_2.csv', 'questionnaire_3.csv', 'questionnaire_4.csv', 'questionnaire_5.csv']\n    2360 responses | 60 excerpts | 20 pieces | 118 participants\n\n[2] Panel reliability (ICC(1)) …\n    valence ICC(1,k)=0.961 | arousal ICC(1,k)=0.948\n\n[3] Excerpt-level diagnostics …\n    Saved: /kaggle/working/excerpt_cleaning_output/excerpt_report.csv (54 contested)\n\n[4] Per-piece manipulation check …\n    Saved: /kaggle/working/excerpt_cleaning_output/piece_manipulation_report.csv (4 inversion flag(s))\n\n[5] Plots …\n  Saved: /kaggle/working/excerpt_cleaning_output/plots/excerpt_overview.png\n\n[6] Summary …\n  Saved: /kaggle/working/excerpt_cleaning_output/excerpt_summary.txt\n\nEXCERPT / STIMULUS QC REPORT\n============================================================\nExcerpts analysed : 60   |   Pieces : 20\nRater coverage    : MEC/EXP≈2 sessions, EXG≈1 session (by design)\n\n── PANEL RELIABILITY (one-way ICC(1); higher = more reliable) ──\n  Valence : ICC(1)=0.397   ICC(1,k)=0.961  (avg k≈37)\n  Arousal : ICC(1)=0.325   ICC(1,k)=0.948  (avg k≈38)\n\n── LOW-AGREEMENT / HIGH-DISPERSION EXCERPTS (diagnostic) ──\n  Bach_Adagio_S1_EXG               [flat/uncertain]  rWG_v=0.12 rWG_a=0.56  SD_v=1.60 SD_a=1.14  n=18\n  Bach_Adagio_S1_EXP               [flat/uncertain]  rWG_v=0.40 rWG_a=0.36  SD_v=1.32 SD_a=1.37  n=44\n  Bach_Adagio_S1_MEC               [flat/uncertain]  rWG_v=0.56 rWG_a=0.41  SD_v=1.13 SD_a=1.32  n=52\n  Bruch_VC1_EXG                    [flat/uncertain]  rWG_v=0.51 rWG_a=0.52  SD_v=1.19 SD_a=1.18  n=19\n  Bruch_VC1_EXP                    [flat/uncertain]  rWG_v=0.46 rWG_a=0.66  SD_v=1.26 SD_a=1.00  n=46\n  Bruch_VC1_MEC                    [flat/uncertain]  rWG_v=0.60 rWG_a=0.52  SD_v=1.08 SD_a=1.18  n=50\n  Cinema_Paradiso_EXG              [flat/uncertain]  rWG_v=0.38 rWG_a=0.45  SD_v=1.34 SD_a=1.27  n=32\n  Cinema_Paradiso_EXP              [flat/uncertain]  rWG_v=0.03 rWG_a=0.49  SD_v=1.68 SD_a=1.22  n=38\n  Cinema_Paradiso_MEC              [flat/uncertain]  rWG_v=0.36 rWG_a=0.52  SD_v=1.37 SD_a=1.19  n=44\n  Don_Juan_EXG                     [flat/uncertain]  rWG_v=0.36 rWG_a=0.69  SD_v=1.37 SD_a=0.95  n=19\n  Don_Juan_EXP                     [flat/uncertain]  rWG_v=0.70 rWG_a=0.50  SD_v=0.93 SD_a=1.20  n=46\n  Don_Juan_MEC                     [flat/uncertain]  rWG_v=0.44 rWG_a=0.40  SD_v=1.28 SD_a=1.32  n=49\n  Godfather_EXG                    [flat/uncertain]  rWG_v=0.41 rWG_a=0.54  SD_v=1.31 SD_a=1.15  n=20\n  Godfather_EXP                    [flat/uncertain]  rWG_v=0.24 rWG_a=0.60  SD_v=1.49 SD_a=1.08  n=43\n  Godfather_MEC                    [flat/uncertain]  rWG_v=0.44 rWG_a=0.49  SD_v=1.28 SD_a=1.22  n=50\n  La_Vita_E_Bella_EXG              [flat/uncertain]  rWG_v=0.57 rWG_a=0.42  SD_v=1.12 SD_a=1.30  n=21\n  La_Vita_E_Bella_EXP              [split/bimodal]  rWG_v=0.48 rWG_a=0.47  SD_v=1.23 SD_a=1.25  n=45\n  La_Vita_E_Bella_MEC              [flat/uncertain]  rWG_v=0.74 rWG_a=0.45  SD_v=0.88 SD_a=1.27  n=52\n  Meditation_Thais_EXP             [flat/uncertain]  rWG_v=0.53 rWG_a=0.33  SD_v=1.17 SD_a=1.40  n=52\n  Mendelssohn_VC_Mvt2_EXG          [flat/uncertain]  rWG_v=-0.07 rWG_a=0.27  SD_v=1.77 SD_a=1.46  n=19\n  Mendelssohn_VC_Mvt2_EXP          [split/bimodal]  rWG_v=0.35 rWG_a=0.53  SD_v=1.38 SD_a=1.17  n=42\n  Mendelssohn_VC_Mvt2_MEC          [flat/uncertain]  rWG_v=0.46 rWG_a=0.59  SD_v=1.26 SD_a=1.10  n=51\n  Mozart_VC3_EXG                   [flat/uncertain]  rWG_v=0.84 rWG_a=0.56  SD_v=0.69 SD_a=1.14  n=20\n  Mozart_VC3_MEC                   [flat/uncertain]  rWG_v=0.58 rWG_a=0.44  SD_v=1.10 SD_a=1.28  n=51\n  Mozart_VC4_EXP                   [split/bimodal]  rWG_v=0.67 rWG_a=0.35  SD_v=0.97 SD_a=1.38  n=50\n  Mozart_VC4_MEC                   [flat/uncertain]  rWG_v=0.62 rWG_a=0.58  SD_v=1.05 SD_a=1.11  n=41\n  Schindlers_List_EXG              [flat/uncertain]  rWG_v=0.85 rWG_a=0.31  SD_v=0.67 SD_a=1.41  n=21\n  Schindlers_List_EXP              [split/bimodal]  rWG_v=0.28 rWG_a=0.04  SD_v=1.45 SD_a=1.67  n=39\n  Schindlers_List_MEC              [split/bimodal]  rWG_v=0.54 rWG_a=0.32  SD_v=1.16 SD_a=1.41  n=31\n  Secret_Garden_EXG                [flat/uncertain]  rWG_v=0.54 rWG_a=0.41  SD_v=1.16 SD_a=1.31  n=28\n  Secret_Garden_EXP                [split/bimodal]  rWG_v=0.57 rWG_a=0.36  SD_v=1.12 SD_a=1.37  n=35\n  Secret_Garden_MEC                [flat/uncertain]  rWG_v=0.68 rWG_a=0.47  SD_v=0.97 SD_a=1.25  n=42\n  Shostakovich_SQ8_exrpt1_EXG      [flat/uncertain]  rWG_v=0.37 rWG_a=0.54  SD_v=1.35 SD_a=1.16  n=30\n  Shostakovich_SQ8_exrpt1_EXP      [flat/uncertain]  rWG_v=0.48 rWG_a=0.56  SD_v=1.23 SD_a=1.13  n=37\n  Shostakovich_SQ8_exrpt2_EXG      [flat/uncertain]  rWG_v=0.46 rWG_a=0.69  SD_v=1.26 SD_a=0.95  n=25\n  Shostakovich_SQ8_exrpt2_EXP      [flat/uncertain]  rWG_v=0.53 rWG_a=0.73  SD_v=1.17 SD_a=0.89  n=51\n  Shostakovich_SQ8_exrpt3_EXG      [flat/uncertain]  rWG_v=0.18 rWG_a=0.56  SD_v=1.54 SD_a=1.14  n=18\n  Shostakovich_SQ8_exrpt3_EXP      [flat/uncertain]  rWG_v=0.42 rWG_a=0.42  SD_v=1.30 SD_a=1.30  n=44\n  Shostakovich_SQ8_exrpt3_MEC      [flat/uncertain]  rWG_v=0.58 rWG_a=0.46  SD_v=1.11 SD_a=1.26  n=50\n  Shostakovich_Sym5_Mvt1_EXG       [flat/uncertain]  rWG_v=0.61 rWG_a=0.48  SD_v=1.07 SD_a=1.24  n=23\n  Shostakovich_Sym5_Mvt1_EXP       [flat/uncertain]  rWG_v=0.34 rWG_a=0.41  SD_v=1.38 SD_a=1.31  n=48\n  Shostakovich_Sym5_Mvt1_MEC       [flat/uncertain]  rWG_v=0.70 rWG_a=0.34  SD_v=0.93 SD_a=1.39  n=38\n  Shostakovich_Sym5_Mvt3_EXG       [flat/uncertain]  rWG_v=0.37 rWG_a=0.43  SD_v=1.36 SD_a=1.29  n=12\n  Shostakovich_Sym5_Mvt3_EXP       [flat/uncertain]  rWG_v=0.52 rWG_a=0.30  SD_v=1.18 SD_a=1.43  n=41\n  Shostakovich_Sym5_Mvt3_MEC       [flat/uncertain]  rWG_v=0.69 rWG_a=0.27  SD_v=0.95 SD_a=1.46  n=41\n  Shostakovich_VC1_EXG             [flat/uncertain]  rWG_v=0.56 rWG_a=0.52  SD_v=1.13 SD_a=1.18  n=19\n  Shostakovich_VC1_EXP             [flat/uncertain]  rWG_v=0.61 rWG_a=0.44  SD_v=1.07 SD_a=1.28  n=48\n  Shostakovich_VC1_MEC             [flat/uncertain]  rWG_v=0.79 rWG_a=0.58  SD_v=0.78 SD_a=1.11  n=41\n  Tanzil_Serenade_EXG              [flat/uncertain]  rWG_v=0.40 rWG_a=0.64  SD_v=1.32 SD_a=1.03  n=32\n  Tanzil_Serenade_EXP              [flat/uncertain]  rWG_v=0.42 rWG_a=0.55  SD_v=1.31 SD_a=1.15  n=41\n  Tanzil_Serenade_MEC              [flat/uncertain]  rWG_v=0.42 rWG_a=0.52  SD_v=1.30 SD_a=1.18  n=44\n  Vitali_Chaconne_EXG              [flat/uncertain]  rWG_v=0.05 rWG_a=0.52  SD_v=1.67 SD_a=1.18  n=17\n  Vitali_Chaconne_EXP              [flat/uncertain]  rWG_v=0.57 rWG_a=0.49  SD_v=1.12 SD_a=1.22  n=51\n  Vitali_Chaconne_MEC              [flat/uncertain]  rWG_v=0.56 rWG_a=0.41  SD_v=1.14 SD_a=1.31  n=43\n\n── MANIPULATION-CHECK FLAGS (candidate stimulus problems) ──\n  Bach_Adagio_S1               EXG−MEC arousal = -0.61  (MEC=3.84 EXP=3.41 EXG=3.24)\n  Mendelssohn_VC_Mvt2          EXG−MEC arousal = -0.07  (MEC=2.40 EXP=2.15 EXG=2.33)\n  La_Vita_E_Bella              EXG−MEC arousal = -0.03  (MEC=2.61 EXP=2.54 EXG=2.58)\n  Godfather                    EXG−MEC arousal = -0.01  (MEC=2.68 EXP=2.44 EXG=2.67)\n\n  Pieces where the 3 conditions are NOT statistically distinguishable\n  (Kruskal–Wallis p > 0.05 on arousal):\n    Bach_Adagio_S1               KW p=0.105\n    Mendelssohn_VC_Mvt2          KW p=0.407\n    La_Vita_E_Bella              KW p=0.952\n    Godfather                    KW p=0.623\n    Shostakovich_Sym5_Mvt3       KW p=0.956\n    Shostakovich_VC1             KW p=0.633\n    Schindlers_List              KW p=0.087\n    Shostakovich_SQ8_exrpt3      KW p=0.252\n    Cinema_Paradiso              KW p=0.314\n    Mozart_VC3                   KW p=0.167\n    Don_Juan                     KW p=0.057\n    Secret_Garden                KW p=0.094\n\n── HOW TO USE THESE FLAGS ───────────────────────────────\n  • Disagreement / low rWG is NOT grounds for removal — it is often the\n    finding (a 'split/bimodal' excerpt = two genuine interpretations).\n  • Remove an excerpt only for an INDEPENDENT reason: a technical fault\n    in the recording, or a manipulation failure (inversion below).\n  • Report all flags, your decision per excerpt, and whether any stimulus\n    was removed and why.\n\n✅ Done. Results in /kaggle/working/excerpt_cleaning_output/\n","output_type":"stream"}],"execution_count":2}]}
+"""
+excerpt_cleaning.py  —  stimulus-level quality control for the violin study
+─────────────────────────────────────────────────────────────────────────────
+Standalone companion to questionnaire_cleaning.py. Where that script screens
+PARTICIPANTS, this one screens EXCERPTS (stimuli). It does NOT read the notebook
+or any of its outputs — it re-parses the same questionnaire CSVs and re-derives
+the excerpt/condition/piece mapping internally (embedded below), so it can be run
+on its own.
+
+WHY THIS EXISTS
+  v1's questionnaire_cleaning.py tried to flag excerpts with a per-column "ICC"
+  that was mathematically invalid (a monotonic function of variance, computed on
+  a single column — the opposite of what ICC means), so it never flagged anything.
+  This script replaces that with correct, citable stimulus diagnostics.
+
+WHAT IT COMPUTES  (one row per excerpt unless noted)
+  1. Coverage        — n_raters per excerpt (design: MEC/EXP appear in 2 sessions,
+                       EXG in 1, so EXG excerpts legitimately have ~half the raters).
+  2. Dispersion      — valence/arousal SD and IQR (how spread the ratings are).
+  3. rWG agreement   — James/Demaree/Wolf within-group agreement vs a uniform null
+                       on a 6-point scale (1 = perfect agreement, ~0 = none).
+  4. Entropy         — Shannon entropy of the emotion-tag distribution (label
+                       disagreement) and of the valence histogram.
+  5. Bimodality      — Hartigan's dip test (if `diptest` installed) else Sarle's
+                       bimodality coefficient. Separates "genuinely split" (two
+                       camps → interesting) from "uniformly uncertain" (flat).
+  6. Panel ICC(1,k)  — ONE overall reliability figure for valence and for arousal,
+                       via one-way ANOVA (correct model here: each excerpt is rated
+                       by a DIFFERENT random set of listeners, so ICC(1), not ICC(2)).
+  7. Manipulation    — per PIECE, whether mean arousal follows the expected
+     check             MEC ≤ EXP ≤ EXG ordering (expressive intensity → arousal).
+                       A piece whose EXG is not more arousing than its MEC is a
+                       manipulation-failure candidate. Kruskal–Wallis tests whether
+                       the three conditions differ at all for that piece.
+
+PHILOSOPHY (read before removing anything)
+  Removing an excerpt removes it for every participant and shrinks an already tiny
+  60-excerpt design, so this script FLAGS, it does not auto-remove. Disagreement
+  alone is NOT grounds for removal — it is often the finding. Remove an excerpt
+  only for an INDEPENDENT reason: a technical fault in the recording, or a clear
+  manipulation failure. Report every flag and your decision transparently.
+
+USAGE
+  1. Edit CONFIG (CSV_GLOB, OUTPUT_DIR). The embedded EXCERPT_MAP is keyed by CSV
+     *basename*, so only the folder in CSV_GLOB needs to match your machine.
+  2. python excerpt_cleaning.py
+─────────────────────────────────────────────────────────────────────────────
+"""
+
+import os, glob, re, warnings
+from pathlib import Path
+from collections import Counter
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
+try:
+    from diptest import diptest as _diptest
+    DIP_OK = True
+except Exception:
+    DIP_OK = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CONFIG
+# ═══════════════════════════════════════════════════════════════════════════════
+CSV_GLOB = '/kaggle/input/datasets/george031218732003/violin-thesis-forms/Forms/questionnaire_*.csv'
+OUTPUT_DIR     = '/kaggle/working/excerpt_cleaning_output'
+DATA_START_COL = 3
+COLS_PER_ITEM  = 3
+N_EXCERPTS     = 20
+VA_SCALE_MIN, VA_SCALE_MAX = 1, 6
+N_SCALE_POINTS = 6           # for rWG expected-variance null
+
+# Flag thresholds (diagnostic, not automatic removal)
+RWG_LOW        = 0.60        # rWG below this on val OR aro → low-agreement excerpt
+SD_HIGH        = 1.40        # rating SD above this → high-dispersion excerpt
+DIP_P          = 0.05        # dip-test p below this → significantly bimodal
+BC_BIMODAL     = 0.555       # Sarle's coefficient above this → bimodal (fallback)
+KW_P           = 0.05        # Kruskal–Wallis p above this → conditions indistinguishable
+
+# ─── EMBEDDED MAPPING (keyed by CSV basename; mirrors the notebook CONFIG) ─────
+CONDITIONS = {'MEC': 'Mechanical', 'EXP': 'Expressive', 'EXG': 'Exaggerated'}
+EMOTION_LABELS = ['Tenderness', 'Nostalgia', 'Peacefulness', 'Power',
+                  'Joyful Activation', 'Tension', 'Sadness', 'Neutral']
+GREEK_TO_ENGLISH = {
+    'Χαρά / Ενέργεια (Joyful Activation)': 'Joyful Activation',
+    'Γαλήνη (Peacefulness)': 'Peacefulness', 'Νοσταλγία (Nostalgia)': 'Nostalgia',
+    'Θλίψη (Sadness)': 'Sadness', 'Τρυφερότητα (Tenderness)': 'Tenderness',
+    'Δύναμη (Power)': 'Power', 'Ένταση (Tension)': 'Tension',
+    'Ουδέτερο (Neutral)': 'Neutral',
+}
+EXCERPT_MAP = {
+    'questionnaire_1.csv': ['Bach_Adagio_S1_MEC', 'Bruch_VC1_EXG', 'Cinema_Paradiso_EXP',
+        'Don_Juan_EXG', 'Godfather_MEC', 'La_Vita_E_Bella_MEC', 'Meditation_Thais_EXP',
+        'Mendelssohn_VC_Mvt2_MEC', 'Mozart_VC3_EXG', 'Mozart_VC4_MEC', 'Schindlers_List_MEC',
+        'Secret_Garden_EXP', 'Shostakovich_SQ8_exrpt1_EXP', 'Shostakovich_SQ8_exrpt2_MEC',
+        'Shostakovich_SQ8_exrpt3_EXG', 'Shostakovich_Sym5_Mvt1_MEC', 'Shostakovich_Sym5_Mvt3_EXP',
+        'Shostakovich_VC1_EXP', 'Tanzil_Serenade_EXP', 'Vitali_Chaconne_EXP'],
+    'questionnaire_2.csv': ['Bach_Adagio_S1_EXG', 'Bruch_VC1_EXP', 'Cinema_Paradiso_EXP',
+        'Don_Juan_EXP', 'Godfather_EXG', 'La_Vita_E_Bella_EXG', 'Meditation_Thais_MEC',
+        'Mendelssohn_VC_Mvt2_EXG', 'Mozart_VC3_EXP', 'Mozart_VC4_MEC', 'Schindlers_List_MEC',
+        'Secret_Garden_EXP', 'Shostakovich_SQ8_exrpt1_EXP', 'Shostakovich_SQ8_exrpt2_MEC',
+        'Shostakovich_SQ8_exrpt3_EXP', 'Shostakovich_Sym5_Mvt1_MEC', 'Shostakovich_Sym5_Mvt3_MEC',
+        'Shostakovich_VC1_MEC', 'Tanzil_Serenade_EXP', 'Vitali_Chaconne_MEC'],
+    'questionnaire_3.csv': ['Bach_Adagio_S1_EXP', 'Bruch_VC1_EXP', 'Cinema_Paradiso_MEC',
+        'Don_Juan_EXP', 'Godfather_EXP', 'La_Vita_E_Bella_EXP', 'Meditation_Thais_MEC',
+        'Mendelssohn_VC_Mvt2_EXP', 'Mozart_VC3_EXP', 'Mozart_VC4_EXG', 'Schindlers_List_EXG',
+        'Secret_Garden_MEC', 'Shostakovich_SQ8_exrpt1_MEC', 'Shostakovich_SQ8_exrpt2_EXG',
+        'Shostakovich_SQ8_exrpt3_EXP', 'Shostakovich_Sym5_Mvt1_EXG', 'Shostakovich_Sym5_Mvt3_MEC',
+        'Shostakovich_VC1_MEC', 'Tanzil_Serenade_MEC', 'Vitali_Chaconne_MEC'],
+    'questionnaire_4.csv': ['Bach_Adagio_S1_EXP', 'Bruch_VC1_MEC', 'Cinema_Paradiso_MEC',
+        'Don_Juan_MEC', 'Godfather_EXP', 'La_Vita_E_Bella_EXP', 'Meditation_Thais_EXG',
+        'Mendelssohn_VC_Mvt2_EXP', 'Mozart_VC3_MEC', 'Mozart_VC4_EXP', 'Schindlers_List_EXP',
+        'Secret_Garden_MEC', 'Shostakovich_SQ8_exrpt1_MEC', 'Shostakovich_SQ8_exrpt2_EXP',
+        'Shostakovich_SQ8_exrpt3_MEC', 'Shostakovich_Sym5_Mvt1_EXP', 'Shostakovich_Sym5_Mvt3_EXG',
+        'Shostakovich_VC1_EXG', 'Tanzil_Serenade_MEC', 'Vitali_Chaconne_EXG'],
+    'questionnaire_5.csv': ['Bach_Adagio_S1_MEC', 'Bruch_VC1_MEC', 'Cinema_Paradiso_EXG',
+        'Don_Juan_MEC', 'Godfather_MEC', 'La_Vita_E_Bella_MEC', 'Meditation_Thais_EXP',
+        'Mendelssohn_VC_Mvt2_MEC', 'Mozart_VC3_MEC', 'Mozart_VC4_EXP', 'Schindlers_List_EXP',
+        'Secret_Garden_EXG', 'Shostakovich_SQ8_exrpt1_EXG', 'Shostakovich_SQ8_exrpt2_EXP',
+        'Shostakovich_SQ8_exrpt3_MEC', 'Shostakovich_Sym5_Mvt1_EXP', 'Shostakovich_Sym5_Mvt3_EXP',
+        'Shostakovich_VC1_EXP', 'Tanzil_Serenade_EXG', 'Vitali_Chaconne_EXP'],
+}
+# ═══════════════════════════════════════════════════════════════════════════════
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(f'{OUTPUT_DIR}/plots', exist_ok=True)
+
+
+def condition_of(eid):
+    for c in CONDITIONS:
+        if eid.endswith('_' + c):
+            return c
+    return 'UNKNOWN'
+
+
+def piece_of(eid):
+    for c in CONDITIONS:
+        if eid.endswith('_' + c):
+            return eid[:-(len(c) + 1)]
+    return eid
+
+
+def parse_tags(cell):
+    if pd.isna(cell) or str(cell).strip() == '':
+        return []
+    out = []
+    for part in [p.strip() for p in str(cell).split(',')]:
+        if part in GREEK_TO_ENGLISH:
+            out.append(GREEK_TO_ENGLISH[part])
+        else:
+            m = re.search(r'\(([^)]+)\)', part)
+            if m and m.group(1).strip() in EMOTION_LABELS:
+                out.append(m.group(1).strip())
+    return out
+
+
+# ── LOAD → long format ────────────────────────────────────────────────────────
+def load_long(csv_glob):
+    files = sorted(glob.glob(csv_glob))
+    if not files:
+        raise FileNotFoundError(f"No CSVs match '{csv_glob}'. Update CSV_GLOB.")
+    print(f"Found {len(files)} session file(s): {[Path(f).name for f in files]}")
+    rows = []
+    for fpath in files:
+        base = Path(fpath).name
+        if base not in EXCERPT_MAP:
+            warnings.warn(f"No excerpt order for {base} — skipping."); continue
+        order = EXCERPT_MAP[base]
+        df = pd.read_csv(fpath, header=0)
+        for p_idx, row in df.iterrows():
+            pid = f'{Path(fpath).stem}_P{p_idx + 1:03d}'
+            for i in range(N_EXCERPTS):
+                col = DATA_START_COL + i * COLS_PER_ITEM
+                if col + 2 >= len(row):
+                    break
+                try:
+                    v = float(str(row.iloc[col + 1]).strip())
+                    a = float(str(row.iloc[col + 2]).strip())
+                    v = v if VA_SCALE_MIN <= v <= VA_SCALE_MAX else np.nan
+                    a = a if VA_SCALE_MIN <= a <= VA_SCALE_MAX else np.nan
+                except (ValueError, TypeError):
+                    v = a = np.nan
+                eid = order[i]
+                rows.append({'participant_id': pid, 'excerpt_id': eid,
+                             'piece': piece_of(eid), 'condition': condition_of(eid),
+                             'valence': v, 'arousal': a,
+                             'tags': parse_tags(row.iloc[col])})
+    return pd.DataFrame(rows)
+
+
+# ── metrics ───────────────────────────────────────────────────────────────────
+def rwg(values):
+    """James/Demaree/Wolf single-item rWG vs a uniform null on an N-point scale."""
+    v = values[~np.isnan(values)]
+    if len(v) < 2:
+        return np.nan
+    s2 = np.var(v, ddof=1)
+    sigma2_eu = (N_SCALE_POINTS ** 2 - 1) / 12.0     # uniform-null variance
+    return 1.0 - s2 / sigma2_eu                       # may be negative; report raw
+
+
+def shannon_entropy(counts):
+    c = np.array([x for x in counts if x > 0], dtype=float)
+    if c.sum() == 0:
+        return 0.0
+    p = c / c.sum()
+    return float(-np.sum(p * np.log2(p)))
+
+
+def bimodality(values):
+    """Return (is_bimodal, statistic, pvalue_or_nan, method)."""
+    v = values[~np.isnan(values)]
+    if len(v) < 4 or np.var(v) < 1e-9:
+        return False, np.nan, np.nan, 'n/a'
+    if DIP_OK:
+        d, p = _diptest(v.astype(float))
+        return (p < DIP_P), float(d), float(p), 'dip'
+    # Sarle's bimodality coefficient fallback
+    n = len(v)
+    g = stats.skew(v, bias=False)
+    k = stats.kurtosis(v, fisher=True, bias=False)
+    denom = k + 3 * (n - 1) ** 2 / ((n - 2) * (n - 3)) if n > 3 else np.nan
+    bc = (g ** 2 + 1) / denom if denom and denom > 0 else np.nan
+    return (bc is not np.nan and bc > BC_BIMODAL), float(bc), np.nan, 'BC'
+
+
+def panel_icc1(long_df, value_col):
+    """Overall ICC(1) and ICC(1,k) via one-way ANOVA (targets = excerpts).
+
+    Correct model here because each excerpt is rated by a different random set
+    of listeners (raters are NOT crossed with targets).
+    """
+    d = long_df[['excerpt_id', value_col]].dropna()
+    groups = [g[value_col].values for _, g in d.groupby('excerpt_id')]
+    groups = [g for g in groups if len(g) > 0]
+    m = len(groups)
+    N = sum(len(g) for g in groups)
+    if m < 2 or N <= m:
+        return np.nan, np.nan, np.nan
+    grand = np.concatenate(groups).mean()
+    ss_b = sum(len(g) * (g.mean() - grand) ** 2 for g in groups)
+    ss_w = sum(((g - g.mean()) ** 2).sum() for g in groups)
+    ms_b = ss_b / (m - 1)
+    ms_w = ss_w / (N - m)
+    # unbalanced k0 correction
+    ni = np.array([len(g) for g in groups])
+    k0 = (N - (ni ** 2).sum() / N) / (m - 1)
+    icc1 = (ms_b - ms_w) / (ms_b + (k0 - 1) * ms_w) if (ms_b + (k0 - 1) * ms_w) else np.nan
+    icc1k = (ms_b - ms_w) / ms_b if ms_b else np.nan
+    return float(icc1), float(icc1k), float(k0)
+
+
+# ── EXCERPT-LEVEL REPORT ──────────────────────────────────────────────────────
+def build_excerpt_report(long_df):
+    recs = []
+    for eid, g in long_df.groupby('excerpt_id'):
+        v = g['valence'].values
+        a = g['arousal'].values
+        tag_counts = Counter(t for tags in g['tags'] for t in tags)
+        val_hist = np.histogram(v[~np.isnan(v)],
+                                bins=np.arange(VA_SCALE_MIN, VA_SCALE_MAX + 2))[0]
+        bim_v = bimodality(v)
+        rwg_v, rwg_a = rwg(v), rwg(a)
+        sd_v = np.nanstd(v, ddof=1) if np.sum(~np.isnan(v)) > 1 else np.nan
+        sd_a = np.nanstd(a, ddof=1) if np.sum(~np.isnan(a)) > 1 else np.nan
+        low_agree = (np.nanmin([rwg_v, rwg_a]) < RWG_LOW)
+        high_disp = (np.nanmax([sd_v, sd_a]) > SD_HIGH)
+        recs.append({
+            'excerpt_id': eid, 'piece': piece_of(eid), 'condition': condition_of(eid),
+            'n_raters': int(np.sum(~np.isnan(v))),
+            'valence_mean': np.nanmean(v), 'valence_sd': sd_v,
+            'arousal_mean': np.nanmean(a), 'arousal_sd': sd_a,
+            'valence_iqr': np.nanpercentile(v, 75) - np.nanpercentile(v, 25)
+                           if np.sum(~np.isnan(v)) else np.nan,
+            'rwg_valence': rwg_v, 'rwg_arousal': rwg_a,
+            'tag_entropy': shannon_entropy(list(tag_counts.values())),
+            'valence_entropy': shannon_entropy(val_hist),
+            'bimodal_valence': bim_v[0], 'bimodal_stat': bim_v[1],
+            'bimodal_p': bim_v[2], 'bimodal_method': bim_v[3],
+            'top_tags': tag_counts.most_common(3),
+            'flag_low_agreement': bool(low_agree),
+            'flag_high_dispersion': bool(high_disp),
+            # "contested" = disagreement present; sub-type tells you what kind
+            'contested_type': ('split/bimodal' if bim_v[0]
+                               else ('flat/uncertain' if (low_agree or high_disp)
+                                     else 'consensus')),
+        })
+    df = pd.DataFrame(recs).sort_values(['piece', 'condition']).reset_index(drop=True)
+    return df
+
+
+# ── PIECE-LEVEL MANIPULATION CHECK ────────────────────────────────────────────
+def build_manipulation_report(long_df):
+    """Per piece: does mean arousal follow MEC ≤ EXP ≤ EXG (expressive intensity)?"""
+    recs = []
+    for piece, g in long_df.groupby('piece'):
+        means = {c: g.loc[g['condition'] == c, 'arousal'].mean() for c in CONDITIONS}
+        vmeans = {c: g.loc[g['condition'] == c, 'valence'].mean() for c in CONDITIONS}
+        have = [c for c in ['MEC', 'EXP', 'EXG'] if not np.isnan(means[c])]
+        # Kruskal–Wallis across available conditions (response-level arousal)
+        samples = [g.loc[g['condition'] == c, 'arousal'].dropna().values for c in have]
+        samples = [s for s in samples if len(s) > 0]
+        if len(samples) >= 2 and all(len(s) >= 3 for s in samples):
+            kw_h, kw_p = stats.kruskal(*samples)
+        else:
+            kw_h, kw_p = np.nan, np.nan
+        monotonic = (not np.isnan(means['MEC']) and not np.isnan(means['EXP'])
+                     and not np.isnan(means['EXG'])
+                     and means['MEC'] <= means['EXP'] <= means['EXG'])
+        inversion = (not np.isnan(means['MEC']) and not np.isnan(means['EXG'])
+                     and means['EXG'] < means['MEC'])
+        recs.append({
+            'piece': piece,
+            'arousal_MEC': means['MEC'], 'arousal_EXP': means['EXP'], 'arousal_EXG': means['EXG'],
+            'valence_MEC': vmeans['MEC'], 'valence_EXP': vmeans['EXP'], 'valence_EXG': vmeans['EXG'],
+            'delta_EXG_minus_MEC': (means['EXG'] - means['MEC'])
+                                   if not (np.isnan(means['EXG']) or np.isnan(means['MEC'])) else np.nan,
+            'kw_H': kw_h, 'kw_p': kw_p,
+            'arousal_monotonic': bool(monotonic),
+            'flag_inversion': bool(inversion),                 # EXG less arousing than MEC
+            'flag_conditions_indistinct': bool(not np.isnan(kw_p) and kw_p > KW_P),
+        })
+    return pd.DataFrame(recs).sort_values('delta_EXG_minus_MEC').reset_index(drop=True)
+
+
+# ── PLOTS ─────────────────────────────────────────────────────────────────────
+def make_plots(exc, man, icc, output_dir):
+    fig = plt.figure(figsize=(16, 10))
+    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)
+
+    ax = fig.add_subplot(gs[0, 0])
+    colors = ['red' if f else 'steelblue' for f in exc['flag_low_agreement']]
+    ax.bar(range(len(exc)), exc['rwg_valence'].fillna(0), color=colors)
+    ax.axhline(RWG_LOW, color='red', ls='--', label=f'rWG={RWG_LOW}')
+    ax.set_title('rWG agreement (valence) per excerpt')
+    ax.set_xlabel('excerpt'); ax.set_ylabel('rWG'); ax.legend(fontsize=8)
+
+    ax = fig.add_subplot(gs[0, 1])
+    ax.scatter(exc['arousal_sd'], exc['valence_sd'],
+               c=['red' if f else 'teal' for f in exc['flag_high_dispersion']], s=30)
+    ax.axvline(SD_HIGH, color='red', ls='--'); ax.axhline(SD_HIGH, color='red', ls='--')
+    ax.set_title('Rating dispersion'); ax.set_xlabel('arousal SD'); ax.set_ylabel('valence SD')
+
+    ax = fig.add_subplot(gs[1, 0])
+    y = np.arange(len(man))
+    colors = ['red' if f else 'seagreen' for f in man['flag_inversion']]
+    ax.barh(y, man['delta_EXG_minus_MEC'].fillna(0), color=colors)
+    ax.axvline(0, color='black', lw=0.8)
+    ax.set_yticks(y); ax.set_yticklabels(man['piece'], fontsize=7)
+    ax.set_title('Manipulation check: arousal(EXG) − arousal(MEC)\n'
+                 'red = inversion (EXG not more arousing than MEC)')
+    ax.set_xlabel('Δ arousal')
+
+    ax = fig.add_subplot(gs[1, 1])
+    ax.hist(exc['tag_entropy'].dropna(), bins=15, color='mediumpurple', edgecolor='white')
+    ax.set_title('Emotion-tag entropy (label disagreement) per excerpt')
+    ax.set_xlabel('Shannon entropy (bits)'); ax.set_ylabel('excerpts')
+
+    plt.suptitle(f'Excerpt / Stimulus QC — panel ICC(1,k) valence={icc["val_k"]:.2f}, '
+                 f'arousal={icc["aro_k"]:.2f}', fontsize=13)
+    out = f'{output_dir}/plots/excerpt_overview.png'
+    fig.savefig(out, dpi=150, bbox_inches='tight'); plt.close()
+    print(f'  Saved: {out}')
+
+
+# ── SUMMARY ───────────────────────────────────────────────────────────────────
+def write_summary(exc, man, icc, output_dir):
+    lines = [
+        "EXCERPT / STIMULUS QC REPORT", "=" * 60,
+        f"Excerpts analysed : {len(exc)}   |   Pieces : {man.shape[0]}",
+        f"Rater coverage    : MEC/EXP≈2 sessions, EXG≈1 session (by design)", "",
+        "── PANEL RELIABILITY (one-way ICC(1); higher = more reliable) ──",
+        f"  Valence : ICC(1)={icc['val_1']:.3f}   ICC(1,k)={icc['val_k']:.3f}  (avg k≈{icc['val_k0']:.0f})",
+        f"  Arousal : ICC(1)={icc['aro_1']:.3f}   ICC(1,k)={icc['aro_k']:.3f}  (avg k≈{icc['aro_k0']:.0f})",
+        "",
+        "── LOW-AGREEMENT / HIGH-DISPERSION EXCERPTS (diagnostic) ──",
+    ]
+    contested = exc[exc['flag_low_agreement'] | exc['flag_high_dispersion']]
+    if len(contested) == 0:
+        lines.append("  none")
+    for _, r in contested.iterrows():
+        lines.append(f"  {r['excerpt_id']:32s} [{r['contested_type']}]  "
+                     f"rWG_v={r['rwg_valence']:.2f} rWG_a={r['rwg_arousal']:.2f}  "
+                     f"SD_v={r['valence_sd']:.2f} SD_a={r['arousal_sd']:.2f}  n={int(r['n_raters'])}")
+    lines += ["", "── MANIPULATION-CHECK FLAGS (candidate stimulus problems) ──"]
+    inv = man[man['flag_inversion']]
+    if len(inv) == 0:
+        lines.append("  No arousal inversions — every piece's EXG ≥ MEC. Good.")
+    for _, r in inv.iterrows():
+        lines.append(f"  {r['piece']:28s} EXG−MEC arousal = {r['delta_EXG_minus_MEC']:+.2f}  "
+                     f"(MEC={r['arousal_MEC']:.2f} EXP={r['arousal_EXP']:.2f} EXG={r['arousal_EXG']:.2f})")
+    indist = man[man['flag_conditions_indistinct']]
+    if len(indist):
+        lines.append("")
+        lines.append("  Pieces where the 3 conditions are NOT statistically distinguishable")
+        lines.append("  (Kruskal–Wallis p > %.2f on arousal):" % KW_P)
+        for _, r in indist.iterrows():
+            lines.append(f"    {r['piece']:28s} KW p={r['kw_p']:.3f}")
+    lines += [
+        "", "── HOW TO USE THESE FLAGS ───────────────────────────────",
+        "  • Disagreement / low rWG is NOT grounds for removal — it is often the",
+        "    finding (a 'split/bimodal' excerpt = two genuine interpretations).",
+        "  • Remove an excerpt only for an INDEPENDENT reason: a technical fault",
+        "    in the recording, or a manipulation failure (inversion below).",
+        "  • Report all flags, your decision per excerpt, and whether any stimulus",
+        "    was removed and why.",
+    ]
+    text = "\n".join(lines)
+    with open(f'{output_dir}/excerpt_summary.txt', 'w') as f:
+        f.write(text)
+    print(f'  Saved: {output_dir}/excerpt_summary.txt\n'); print(text)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+def main():
+    print("=" * 60)
+    print("  Excerpt / Stimulus QC — Violin Emotion Study")
+    print("=" * 60)
+    print(f"  (bimodality via {'Hartigan dip test' if DIP_OK else 'Sarle BC fallback — pip install diptest for the dip test'})")
+
+    print("\n[1] Loading + mapping responses …")
+    long_df = load_long(CSV_GLOB)
+    print(f"    {len(long_df)} responses | {long_df['excerpt_id'].nunique()} excerpts | "
+          f"{long_df['piece'].nunique()} pieces | {long_df['participant_id'].nunique()} participants")
+
+    print("\n[2] Panel reliability (ICC(1)) …")
+    v1, vk, vk0 = panel_icc1(long_df, 'valence')
+    a1, ak, ak0 = panel_icc1(long_df, 'arousal')
+    icc = {'val_1': v1, 'val_k': vk, 'val_k0': vk0,
+           'aro_1': a1, 'aro_k': ak, 'aro_k0': ak0}
+    print(f"    valence ICC(1,k)={vk:.3f} | arousal ICC(1,k)={ak:.3f}")
+
+    print("\n[3] Excerpt-level diagnostics …")
+    exc = build_excerpt_report(long_df)
+    exc.to_csv(f'{OUTPUT_DIR}/excerpt_report.csv', index=False)
+    print(f"    Saved: {OUTPUT_DIR}/excerpt_report.csv "
+          f"({int((exc['flag_low_agreement'] | exc['flag_high_dispersion']).sum())} contested)")
+
+    print("\n[4] Per-piece manipulation check …")
+    man = build_manipulation_report(long_df)
+    man.to_csv(f'{OUTPUT_DIR}/piece_manipulation_report.csv', index=False)
+    print(f"    Saved: {OUTPUT_DIR}/piece_manipulation_report.csv "
+          f"({int(man['flag_inversion'].sum())} inversion flag(s))")
+
+    print("\n[5] Plots …");   make_plots(exc, man, icc, OUTPUT_DIR)
+    print("\n[6] Summary …"); write_summary(exc, man, icc, OUTPUT_DIR)
+    print(f"\n✅ Done. Results in {os.path.abspath(OUTPUT_DIR)}/")
+
+
+if __name__ == '__main__':
+    main()
