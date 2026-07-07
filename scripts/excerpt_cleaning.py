@@ -18,7 +18,7 @@ WHAT IT COMPUTES  (one row per excerpt unless noted)
                        EXG in 1, so EXG excerpts legitimately have ~half the raters).
   2. Dispersion      — valence/arousal SD and IQR (how spread the ratings are).
   3. rWG agreement   — James/Demaree/Wolf within-group agreement vs a uniform null
-                       on a 6-point scale (1 = perfect agreement, ~0 = none).
+                       on a 7-point scale (1 = perfect agreement, ~0 = none).
   4. Entropy         — Shannon entropy of the emotion-tag distribution (label
                        disagreement) and of the valence histogram.
   5. Bimodality      — Hartigan's dip test (if `diptest` installed) else Sarle's
@@ -73,8 +73,8 @@ OUTPUT_DIR     = '/kaggle/working/excerpt_cleaning_output'
 DATA_START_COL = 3
 COLS_PER_ITEM  = 3
 N_EXCERPTS     = 20
-VA_SCALE_MIN, VA_SCALE_MAX = 1, 6
-N_SCALE_POINTS = 6           # for rWG expected-variance null
+VA_SCALE_MIN, VA_SCALE_MAX = 0, 6
+N_SCALE_POINTS = 7           # 7 scale points (0..6); for rWG expected-variance null
 
 # Flag thresholds (diagnostic, not automatic removal)
 RWG_LOW        = 0.60        # rWG below this on val OR aro → low-agreement excerpt

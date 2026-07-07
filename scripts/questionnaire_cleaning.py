@@ -27,7 +27,7 @@ SCREENING METHODS (participant level)
   → COMBINED flag = flagged by ≥2 independent methods (exclusion candidates)
 
 DESIGN NOTE / CAVEAT
-  MD assumes multivariate-normal ratings; 1–6 Likert data violate this, so the
+  MD assumes multivariate-normal ratings; 0–6 Likert data violate this, so the
   χ² cutoff is a convention, not ground truth. With p=40 rating dimensions the
   covariance is estimated from n≈118 participants — adequate but noisy. Treat MD
   as ONE detector among several; only the ≥2-method combined flag drives removal.
@@ -63,7 +63,7 @@ OUTPUT_DIR     = '/kaggle/working/cleaning_output'
 DATA_START_COL = 3     # first data column (0-indexed): layout is [tags, val, aro] × 20
 COLS_PER_ITEM  = 3
 N_EXCERPTS     = 20
-VA_SCALE_MIN   = 1
+VA_SCALE_MIN   = 0
 VA_SCALE_MAX   = 6
 
 # Thresholds
@@ -71,7 +71,7 @@ MD_CHI2_ALPHA   = 0.001   # χ² level for classical MD
 MD_ROBUST_ALPHA = 0.001   # χ² level for robust (MCD) MD
 CORR_THRESHOLD  = 0.10    # person-total r below this → flagged
 IRV_LOW_THRESH  = 0.25    # SD below this (straight-lining) — see note in compute_irv
-IRV_HIGH_THRESH = 2.20    # SD above this on a 1–6 scale (near the theoretical max) → random
+IRV_HIGH_THRESH = 2.20    # SD above this on a 0–6 scale (near the theoretical max) → random
 LONGSTRING_MIN  = 8       # ≥ N consecutive identical ratings → flagged
 MIN_VALID_FRAC  = 0.50    # participants with < this fraction of valid ratings → flagged
 MCD_SUPPORT_FRAC = 0.75   # fraction of "clean" participants MCD fits its covariance on
@@ -179,7 +179,7 @@ def compute_irv(df):
     """Mean of (SD of valence, SD of arousal) per participant.
 
     Low  → straight-lining (same answer to everything).
-    High → scattered/random. Max SD on a 1–6 scale is ~2.5 (all mass at 1 & 6),
+    High → scattered/random. Max SD on a 0–6 scale is ~3.0 (all mass at 0 & 6),
     so IRV_HIGH_THRESH is set near that ceiling rather than the >4.5 of v1
     (which was unreachable and never fired).
     """
