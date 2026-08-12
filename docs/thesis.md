@@ -2,7 +2,7 @@
 
 **Purpose:** complete standalone context to continue work in a fresh conversation. Covers (1) scope, (2) current pipeline architecture, (3) progress, (4) findings, (5) open issues, (6) technical report status, (7) conventions, (8) workflow.
 
-> **Revision status (current):** This supersedes the older "validation-mode (MERT+CREPE only)" handoff. The pipeline has since gained **per-rater normalization** (new ground truth), an **active Essentia block** (dynamics/timbre/tonal), a **shared leakage-free forwarding gate** for every tool, a full **Part 5 attribution suite** and **Part 6 tool-characterization**, and the **MFCC baseline was removed**. The interpretable-feature narrative has moved **from vibrato to dynamics/timbre + pitch**. DTW (timing) is the next addition. Notebook: `thesis-pipeline.ipynb`, **86 cells**, Kaggle P100.
+> **Revision status (current):** This supersedes the older "validation-mode (MERT+CREPE only)" handoff. The pipeline has since gained **per-rater normalization** (new ground truth), an **active Essentia block** (dynamics/timbre/tonal), a **shared leakage-free forwarding gate** for every tool, a full **Part 5 attribution suite** and **Part 6 tool-characterization**, and the **MFCC baseline was removed**. The interpretable-feature narrative has moved **from vibrato to dynamics/timbre + pitch**. **DTW (timing/rubato) is now implemented and wired end-to-end (§2.4/§2.4b) — its numbers await the next Kaggle run.** Notebook: `thesis-pipeline.ipynb`, **88 cells**, Kaggle P100.
 
 ---
 
@@ -36,7 +36,7 @@ The brief defines the spine **technique → acoustic → audience** plus two cat
 
 ---
 
-## 2. Pipeline Architecture (current, 86 cells)
+## 2. Pipeline Architecture (current, 88 cells)
 
 Runs top-to-bottom. `§` = the in-notebook section banners.
 
@@ -53,9 +53,9 @@ Runs top-to-bottom. `§` = the in-notebook section banners.
 | **2 Feature extraction** | 2.1 / **2.1b** | **MERT** (768-dim, layers 5–7) / **controlled MERT forwarding** (PCA-95, unsupervised) |
 | | 2.2 / **2.2b** | **CREPE** (pitch/vibrato/portamento) / **controlled CREPE forwarding** |
 | | 2.3 / **2.3b** | **Essentia** (dynamics/timbre/tonal) / **controlled Essentia forwarding** |
-| | 2.4 | **Planned extractors — madmom / DTW / MusiCNN (SKIP STUBS)** ← DTW being reactivated |
-| | 2.5 | assemble `X_A/B/C/D`, `X_MERT_FULL`; `STRICT_BLOCKS` guard |
-| **3 Validation & EDA** | 3.1–3.4 | class floors · VA/coverage · CREPE sanity · MERT structure (PCA scree) |
+| | 2.4 / **2.4b** | **DTW timing / rubato (ACTIVE)** — reference-free timing family + within-piece warp-path family / **controlled DTW forwarding**. madmom / MusiCNN remain skip stubs |
+| | 2.5 | assemble `X_A/B/C/D/F`, `X_MERT_FULL`; `STRICT_BLOCKS` guard |
+| **3 Validation & EDA** | 3.1–3.4 | class floors · VA/coverage · CREPE sanity · **3.3b DTW timing sanity + manipulation check** · MERT structure (PCA scree) |
 | **4 Prediction** | 4.1 | multi-label classification, LOOCV, feature sets A/B/C/D |
 | | 4.2 | valence/arousal regression |
 | | 4.4 | ablation table + Wilcoxon |
@@ -75,11 +75,11 @@ Runs top-to-bottom. `§` = the in-notebook section banners.
 
 ### 2.1 The shared forwarding gate (key mechanism)
 
-Every tool is **extracted in full** (nothing lost on disk), then **forwarded** through one shared, **unsupervised** selector `unsup_forward_select(candidates, corr_max=0.90, name, eps, order)`: near-constant prune + correlation prune, in an a-priori preference order. It reads **only the feature matrix, never `Y`** — this is what makes a once-up-front selection safe to feed LOOCV (a supervised selection would leak held-out folds). `StandardScaler` stays **inside** every CV pipeline. MERT (§2.1b), CREPE (§2.2b), Essentia (§2.3b) all use this same gate → `MERT_FORWARD`, `CREPE_FORWARD`, `ESSENTIA_FORWARD`.
+Every tool is **extracted in full** (nothing lost on disk), then **forwarded** through one shared, **unsupervised** selector `unsup_forward_select(candidates, corr_max=0.90, name, eps, order)`: near-constant prune + correlation prune, in an a-priori preference order. It reads **only the feature matrix, never `Y`** — this is what makes a once-up-front selection safe to feed LOOCV (a supervised selection would leak held-out folds). `StandardScaler` stays **inside** every CV pipeline. MERT (§2.1b), CREPE (§2.2b), Essentia (§2.3b) and DTW (§2.4b) all use this same gate → `MERT_FORWARD`, `CREPE_FORWARD`, `ESSENTIA_FORWARD`, `DTW_FORWARD`.
 
 ### 2.2 What enters the models vs what is kept aside
 
-`X_A=MERT-fwd`, `X_B=CREPE-fwd`, `X_C=MERT+CREPE+Essentia (all fwd)`, `X_D=MERT+Essentia`. **`X_MERT_FULL`** (768-dim) is kept aside — **not** a model input — for the *representational* analyses (§3.4 structure, §5.3 distances, §6.1/§6.1b correspondence), which must see all dimensions. `STRICT_BLOCKS=('MERT','Essentia')` → a missing block raises rather than silently zero-filling (per the "hard imports, no fallbacks" policy).
+`X_A=MERT-fwd`, `X_B=CREPE-fwd`, `X_C=MERT+CREPE+Essentia+DTW (all fwd)`, `X_D=MERT+Essentia`, `X_F=MERT+DTW` (the §6.2 complementarity contrast). **`X_MERT_FULL`** (768-dim) is kept aside — **not** a model input — for the *representational* analyses (§3.4 structure, §5.3 distances, §6.1/§6.1b correspondence), which must see all dimensions. `STRICT_BLOCKS=('MERT','Essentia')` → a missing block raises rather than silently zero-filling (per the "hard imports, no fallbacks" policy).
 
 ---
 
@@ -93,7 +93,7 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 - **MFCC baseline removed** — it was degenerate (F1≈0, indistinct from the Dummy floor) and carried out-of-topic leaderboard framing. The **DummyClassifier floors (§4.5b)** are the official chance baseline.
 - **Cleanup pass (partial):** MFCC gone; some duplicate/out-of-topic figures still pending removal (see open issues).
 - **Technical report drafted** — Abstract + Introduction + Methods (IEEEtran), following the Chowdhury/Widmer interpretable-MER backbone (see §6).
-- **DTW (timing) = next addition** (see the accompanying implementation prompt).
+- **DTW (timing/rubato) implemented and integrated (§2.4/§2.4b).** Two families: **(1) reference-free** — local-tempo variability, IOI CV, onset rate, pulse clarity; computed per excerpt with no reference, so all 60 (MEC included) are graded and the family is condition-INdependent. **(2) within-piece DTW deviation** — chroma sequences of EXP/EXG aligned to the same piece's MEC with `librosa.sequence.dtw`; warp-path deviation, local-slope variability, tempo/path ratios. MEC is the alignment reference, so its family-(2) values are the **self-alignment identity (0 deviation / 1 ratio) by construction** — meaningful for attribution but it means family (2) partly encodes the condition. §2.4b splits them: family (1) alone feeds the predictive matrices (`DTW_MODEL_COLS`, `DTW_DEV_IN_MODELS=False`), both feed the attribution frame (`df_dtw_attr`, `DTW_DEV_IN_INTERP=True`). DTW is wired into §2.5 (X_C, new X_F), §3.3b, §5.1, §5.1b, §5.2, §5.4, §5.5, §6.1, §6.1b, §6.2. **Numbers pending the next Kaggle run.**
 
 ---
 
@@ -116,7 +116,7 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 1. **"8 emotions" is mechanically 5 classes.** `QUADRANT_EMOTIONS` maps each quadrant to a *set*, so pairs (Tenderness≡Peacefulness, Power≡Joyful, Sadness≡Nostalgia) are byte-identical columns. **Decision taken: report honestly as 5 classes** (4 quadrants + Neutral). Alternative (rebuild `Y` from raw multi-label tags) remains available. Good supervisor topic.
 2. **Neutral radius un-tuned.** `NEUTRAL_RADIUS=0.75` chosen geometrically. Needs sensitivity (0.5/0.75/1.0); report macro-F1 with and without Neutral.
 3. **Figure dedup still pending** (partial cleanup only): a duplicate VA scatter still sits alongside the circumplex; check for any remaining per-class-F1 heatmap/radar and ablation-figure redundancy and prune (keep circumplex, P/R/F1 bars, PCA scree).
-4. **DTW not yet added** — the χρονικές παραλλαγές (timing/rubato) technique named in the brief is still uncovered until DTW lands (next step).
+4. **DTW numbers not yet produced.** The code is in and statically checked, but every DTW value comes from the next Kaggle run. Two things to watch there: (a) the §2.4b "forwarded dim count outside 3–10" warning — at N=60 the timing block should not balloon the feature space, trim `DTW_CANDIDATES` if it does; (b) whether letting the DTW-deviation family into `df_interp` moves the §5.5 cost-of-explainability numbers, since those columns are 0/1 at MEC by construction (`DTW_DEV_IN_INTERP=False` gives a strictly condition-independent CoE).
 5. **Participant exclusions not applied** — pipeline runs on all 118; wire the 3 flagged in once decided (normalization is already robust to this).
 6. **Statistics hygiene:** dose-response / correlation analyses want FDR or a pre-registered hypothesis set; phrase classifier-set comparisons as "across the classifiers tried," not population inference; nest any selected-on-CV parameters.
 7. **Feature hygiene:** `crepe_portamento_count` is a raw count (normalise per second); `crepe_vibrato_rate_hz` is bandpass-bounded to [4,8] Hz (trust depth); vibrato/portamento computed on concatenated voiced frames (prefer time-contiguous segments).
@@ -134,7 +134,7 @@ First draft written for **Abstract, Introduction, Methods** (IEEEtran, English).
 - **MERT positioned as a frozen/probed representation** (deep-family exemplar), explicitly not a benchmark competitor.
 - **Predictive validation (LOOCV) framed as supportive → appendix**, not a leaderboard.
 
-Methods subsections drafted: study design & graded manipulation · stimuli/corpus · participants & questionnaire (ring) · emotion measurement & ground-truth · **response normalization** · feature extraction (CREPE / Essentia / MERT as parallel blocks; DTW timing noted as planned) · analysis pipeline (deltas, dose-response, read-out, cost of explainability). Unknowns (how the three conditions were produced in detail, piece list, audio specs, demographics, exact tag set, author block) are marked as visible placeholders in the `.tex`.
+Methods subsections drafted: study design & graded manipulation · stimuli/corpus · participants & questionnaire (ring) · emotion measurement & ground-truth · **response normalization** · feature extraction (CREPE / Essentia / MERT as parallel blocks; **the DTW timing block now needs writing up as a fourth parallel block, not as "planned"** — including the honest note that its within-piece family is referenced to the MEC rendition) · analysis pipeline (deltas, dose-response, read-out, cost of explainability). Unknowns (how the three conditions were produced in detail, piece list, audio specs, demographics, exact tag set, author block) are marked as visible placeholders in the `.tex`.
 
 ---
 
@@ -146,11 +146,12 @@ Methods subsections drafted: study design & graded manipulation · stimuli/corpu
 - `emotion_labels` — VA-quadrant-derived (from normalized means); **this becomes `Y`**. `top_tags` — raw tags, descriptive only (§1.5).
 - `Y` (60×N), `mlb.classes_` = class names; `df_expr` — modelled-excerpt frame.
 - **Forwarding:** `unsup_forward_select(...)`; `MERT_FORWARD` / `CREPE_FORWARD` / `ESSENTIA_FORWARD`; forwarded frames `emb_mert_fwd`, `df_crepe_fwd`, `df_ess_fwd`. Full blocks on disk: `df_mert`, `df_crepe`, `df_essentia`.
-- **Assembly:** `FEAT_A/B/E/C/D`, `X_A/X_B/X_C/X_D`, `X_MERT_FULL`; `STRICT_BLOCKS=('MERT','Essentia')`; `bfv(...)` builder.
-- **Interpretable frame & labels** used by Part 5: `df_interp` + `INTERP_FEAT_LABELS` (aggregate CREPE + Essentia; **DTW must be added here when reactivated** — see prompt).
+- **Assembly:** `FEAT_A/B/E/DTW/C/D/F`, `X_A/X_B/X_C/X_D/X_F`, `X_MERT_FULL`; `STRICT_BLOCKS=('MERT','Essentia')` (DTW non-strict but a missing row warns loudly); `bfv(...)` builder.
+- **Interpretable frame & labels** used by Part 5: `df_interp` + `INTERP_FEAT_LABELS` (CREPE + forwarded Essentia + forwarded DTW, built in §5.1; §5.1b / §5.2 / §5.4 / §5.5 all derive their technique set from `INTERP_FEAT_LABELS ∩ df_interp.columns`).
 - Part 5 outputs: `df_dose` (§5.1b) · SHAP importances (§5.2) · read-out coefficients (§5.4) · CoE table (§5.5).
 - Excerpt IDs `PieceName_ConditionCode`; participant IDs `questionnaire_{n}_P{idx:03d}` (alias `S{n}_P{idx:03d}`).
-- `OUTPUT_DIR` — all figures/CSVs. Skip stubs at §2.4: madmom, DTW, MusiCNN.
+- `OUTPUT_DIR` — all figures/CSVs. Skip stubs at §2.4: madmom, MusiCNN (DTW is active).
+- **DTW constants:** `DTW_SR=22050`, `DTW_HOP=512`, `DTW_TG_WIN=384`, BPM band 30–300, chroma-CQT alignment; `DTW_REFFREE` / `DTW_DEV` name the two families.
 
 ---
 
