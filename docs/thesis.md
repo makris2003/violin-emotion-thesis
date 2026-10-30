@@ -1,6 +1,8 @@
 # Thesis Handoff — Violin Expressiveness → Emotion Recognition
 
-**Purpose:** complete standalone context to continue work in a fresh conversation. Covers (1) scope, (2) current pipeline architecture, (3) progress, (4) findings, (5) open issues, (6) technical report status, (7) conventions, (8) workflow.
+**Purpose:** complete standalone context to continue work in a fresh conversation. Covers (1) scope, (2) current pipeline architecture, (3) progress, (4) findings, (5) open issues, (6) technical report status, (7) conventions, (8) workflow, (9) quick answers, (10) audit, **(11) listening study — final facts (N = 116)**, **(12) diploma thesis (LaTeX) — writing status**.
+
+> **Latest (2026-10-30):** the listening-study QC is final (2 exclusions → N = 116, §11) but **not yet applied in the notebook** — the next notebook edit wires the exclusions into §1.1 and the next Kaggle run is Phase B on N = 116. The diploma thesis (NTUA template, LaTeX) has Chapters 1–7 written, 73 of a 120-page cap (§12).
 
 > **Revision status (current): Phase B applied — results pending the next Kaggle run.** Phase B (descriptor repairs + analysis upgrades, §10) is in the notebook (still 101 cells). Phase A was applied and run on Kaggle (2026-10-09, GPU T4, 101 cells, 0 errors); §4 records those verified results, which are **pre-Phase-B** wherever they depend on CREPE / Essentia / timing features or on the default classifier (all of Parts 4–6, §2.3c). Part 1 and the §1.x statistics are unchanged by Phase B. Every Part 4/5/6 predictive number from runs before Phase A is pre-audit and superseded.
 >
@@ -29,8 +31,8 @@ The brief defines the spine **technique → acoustic → audience** plus two cat
 ### 1.3 Dataset
 
 - **60 excerpts = 20 pieces × 3 conditions** — `MEC` mechanical / `EXP` expressive / `EXG` exaggerated. **Recorded by the thesis author playing violin.**
-- **118 participants across 5 linked questionnaire forms.** Ratings: **valence 0–6**, **arousal 0–6**, plus multi-select emotion tags.
-- **Ring (linked) form design:** 20 excerpts/form; **8 anchors shared with each neighbouring form, 4 unique**, so the five forms connect cyclically through **40 anchor excerpts**. This linking underpins the normalization validation (§3/§1.2b).
+- **118 responses across 5 linked Google Forms; 116 after screening** (exclude `questionnaire_5_P012`, `questionnaire_5_P020`; §11). Ratings: **valence 0–6**, **arousal 0–6**, plus 1–3 emotion tags per excerpt (7 GEMS terms + Neutral).
+- **Ring (linked) form design:** every form holds all 20 pieces, one rendition each (8 MEC, 8 EXP, 4 EXG). Renditions follow a **cyclic rotation of (MEC, MEC, EXG, EXP, EXP)** over F1–F5, shifted by one form for each of 5 groups of 4 pieces (§11). So every MEC/EXP excerpt is in two adjacent forms (**8 anchors shared with each neighbouring form**, F5↔F1) and every EXG excerpt in one (**4 unique per form**): the five forms connect cyclically through **40 anchor excerpts**. This linking underpins the normalization validation (§3/§1.2b). Each listener hears each piece once.
 - **Scale 0–6** (7 points, midpoint **3.0**). `0` is a genuine lowest rating (verified in raw forms), **not** NA. `VA_MID = 3.0` — correct, do not change.
 - **Ground truth = 5 classes** (4 circumplex quadrants + Neutral), derived from **normalized** VA means (see §1.1b flow). `NEUTRAL_RADIUS = 0.75` (un-tuned — see open issues).
 
@@ -101,6 +103,9 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 ## 3. Progress since the previous handoff
 
+- **Listening-study QC re-validated and finalised (2026-10-21).** The months-old cleaning scripts were checked against the five CSVs; the participant screening was rewritten (`questionnaire_cleaning_v3.py`, four bugs fixed — §11) → 2 exclusions. Excerpt QC re-run at N = 116. Demographics and durations scripts written. The normalization and ground truth were reproduced offline: at N = 118 the reproduction matches the notebook exactly, so the N = 116 numbers in §11 are what the notebook will produce once the exclusions are wired in.
+- **Diploma thesis Chapters 1–7 written (2026-10-18 → 2026-10-30)** — front matter, Introduction, background Chapters 3–6 rewritten against Phase B, Chapter 7 Dataset written from scratch with N = 116 numbers; colour palette for all figures; numbered subsections. See §12.
+
 - **Phase B of the Oct-2026 audit applied (2026-10-10) — results pending the next Kaggle run.** Nested model selection as the default classifier (B-NMS) · Freedman–Lane incremental test (B-INC) and split-half noise ceiling (B-NC) in §4.9 · MERT-full regression heads (B-MERTFULL) · CREPE tracks cached + octave correction + note segmentation (B-shared) · repaired vibrato (B8), portamento (B9), F0 range (B10) · normalised flux (B11) · silence-gated dynamic range (B12) · `timing_*` family + 151-frame tempogram with log-normal prior (B13) · flatness noise floor + optional session map (B-NF) · `_v2` caches (B-cache). See §10.
 
 - **Phase A of the Oct-2026 audit applied and run on Kaggle (2026-10-09; results in §4).** §4.0 CV engine · re-seeded Dummy floors · leave-one-piece-out primary everywhere · nested ridge + R²/RMSE · §4.9 within-piece prediction · MERT pos-conv weight restore (cache v2) · GaussianNB default + best-of selection removed · class balancing + inner-CV C (+ tier `4D-balancing`) · group-aware MERT probe · BH-FDR in §5.1 · §2.3c recording-level check. See §10.
@@ -150,7 +155,7 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 **Stimulus level.** The stimuli played to participants were **not loudness-normalized** (confirmed by the author): level differences between excerpts are part of the stimulus. §2.3c (Phase A) only checks that no recording was made at a clearly different gain/microphone distance.
 
-**Cleaning.** 3 participants flagged (≥2 methods) — **not yet removed**; decision pending. Excerpt QC: valence ICC(1,k)≈0.96, arousal ≈0.95; a few arousal inversions among the 20 pieces (manipulation-check candidates).
+**Cleaning (final, 2026-10-21 — supersedes the earlier "3 flagged, decision pending").** Screening v3 excludes **2 of 118** (`questionnaire_5_P012`: D1+D2, r = −0.20, MCD 18.4; `questionnaire_5_P020`: D1+D3, valence r = −0.57 / arousal r = +0.78, reversed valence scale). The old "3 flagged" came from the buggy v2 scripts. Kept: `questionnaire_1_P006` (extreme but consistent responder, r = 0.83, D4 only); sensitivity set with near-zero agreement and one flag: `questionnaire_3_P014`, `questionnaire_4_P010`, `questionnaire_5_P018`. Excerpt QC at N = 116: ICC(1,k) V 0.965 / A 0.953; median r_wg 0.60 / 0.59; arousal EXG < MEC in Bach_Adagio_S1 (−0.52), Mendelssohn_VC_Mvt2 (−0.18), La_Vita_E_Bella (−0.09). Full numbers in §11. **Exclusions not yet applied in the notebook.**
 
 ---
 
@@ -160,7 +165,7 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 2. ~~**Neutral radius un-tuned.**~~ **Now measured in §4.4d** — the 0.5/0.75/1.0 sweep runs on both X_A and X_C, reports macro-F1 **with and without** Neutral, and prints class support plus how many excerpts each radius relabels. Remaining decision: read the table once it has run and keep 0.75 unless another radius wins on *both* columns.
 3. **Figure dedup still pending** (partial cleanup only): a duplicate VA scatter still sits alongside the circumplex; check for any remaining per-class-F1 heatmap/radar and ablation-figure redundancy and prune (keep circumplex, P/R/F1 bars, PCA scree).
 4. **DTW block size / DTW-dev in `df_interp`.** In the 2026-08-16 run the §2.4b gate forwarded 11 columns (8 ref-free + 3 dev) and the "outside 3–10" warning fired — trim `DTW_CANDIDATES` if that matters. Open: whether letting the DTW-deviation family into `df_interp` moves the §5.5 cost-of-explainability numbers, since those columns are 0/1 at MEC by construction (`DTW_DEV_IN_INTERP=False` gives a strictly condition-independent CoE).
-5. **Participant exclusions not applied** — pipeline runs on all 118; wire the 3 flagged in once decided (normalization is already robust to this).
+5. **Participant exclusions decided but not applied** — exclude `questionnaire_5_P012` and `questionnaire_5_P020` (§11). Wire them into §1.1 (drop from `df_long` before §1.1b, assert 116 participants / 2,320 rows) and rerun Phase B. Expected Part 1 results are in §11; `Schindlers_List_EXP` moves HA_LV → LA_LV.
 6. **Statistics hygiene:** the ablation study (§4.4b) carries bootstrap CIs, paired permutation tests and **BH-FDR within each tier × protocol** (now over F1, r and R²); **§5.1 now applies BH-FDR over all its tests** (Phase A); §5.1b (dose-response) still wants the same treatment or a pre-registered hypothesis set — not yet approved. Keep phrasing classifier-set comparisons as "across the classifiers tried," not population inference. **The lattice must stay descriptive** — selecting the winning subset on the same CV and then reporting its score is exactly the nested-selection error.
 7. **Feature hygiene — repaired in Phase B (pending the run).** The Phase A descriptors were broken: `crepe_portamento_count` was a raw count; `crepe_vibrato_rate_hz` was bandpass-bounded to [4,8] Hz *and argmax-ed inside that same band* (it could never report "no vibrato"); vibrato/portamento ran on concatenated voiced frames. **Pre-Phase-B vibrato nulls** (the n.s. dose-response) are therefore evidence about the descriptor only. Phase B (B8/B9) analyses time-contiguous notes, searches [3,10] Hz with a presence test, splits extent from coverage and reports portamento as rates/shares — a vibrato null from the next run is a **musical result at this N**, with the remaining caveats (CREPE 10 ms resolution, only notes ≥ 800 ms, declared median substitutions counted in §2.2). B9 detectability limit: a glide is only segmented if its trend moves > 70 cents within 50 ms (≈ 1.4 cents/ms).
 8. ~~**LOOCV leaks piece identity.**~~ **Addressed in Phase A:** leave-one-piece-out is now the PRIMARY protocol everywhere (§4.0), LOOCV is the optimistic secondary, and §4.9 removes the piece entirely (within-piece prediction). Quote the `piece` number for any claim about unseen material.
@@ -171,10 +176,13 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 13. **Known, not fixed (out of scope):** Fig 5 VA scatter (§4.7) never draws the MEC points (`cc` holds only EXP/EXG); README points to `docs/thesis_handoff.md`, the file is `docs/thesis.md`. §5.5's headline CoE is a best-of over two black boxes (max(MERT-PCA, MERT-full)) — conservative; the two separate gaps are in `coe_gaps.csv`.
 14. **Parameter ablations still pending:** CREPE step_ms (re-extraction), the CREPE voicing threshold and the B8/B9 descriptor constants (now cheap from `crepe_tracks_v2.npz`, not approved yet), Essentia frame sizes, the tempogram window / tempo prior, per-MERT-layer.
 15. **Runtime.** Nested selection (full 13-config grid, ~115 distinct calls after the memo) needs ≈ 3 h of serial CPU work by local measurement (≈ 40 s per serial `piece` call, ≈ 3× that for `loo`); with parallel outer folds that is an estimated **≈ 45 min extra on 4 cores, ≈ 1.5 h on 2 cores** — check §4.0's printed `os.cpu_count()` and the total run time.
+16. **Thesis-side open items (2026-10-30):** recruitment channels for the participants (TODO in Ch. 7 §7.4) · mean duration per condition from `piece_durations.csv` (TODO in §7.2.3) · intended quadrant of SQ8_exrpt1 (Q3 but tagged Tension/Power) and SQ8_exrpt3 (Q4 but tagged Tenderness) in the dataset metadata — check before trusting the "Intended" column of Table 7.1 · movement/passage of each work in Table 7.1 · the 6 under-18 participants (shown as "Under 18" in Table 7.5 — ask the supervisor whether consent needs a mention) · author name, committee, NTUA logo, dedication, spelling of Λυμπεράτος/Κανταρέλης, year of `lyberatos2026witheflow` (arXiv 2506 = 2025).
 
 ---
 
 ## 6. Technical report status
+
+> The IEEEtran technical report below is the earlier draft. The **diploma thesis (NTUA template)** is now the main document — see §12.
 
 First draft written for **Abstract, Introduction, Methods** (IEEEtran, English). Structural decisions (from a survey of the closest interpretable-MER / expressive-performance literature):
 
@@ -286,3 +294,58 @@ Variable names (`DTW_REFFREE`, `df_dtw`, `DTW_*`) and the lattice block name `DT
 - [x] §5.5: CoE negative under `piece` (interpretable wins).
 - [x] §6.1b: α hit the grid edge in 32 folds.
 - [x] Runtime: 45.3 → 75.5 min (+30 min), dominated by §4.1 inner-CV tuning and the 4D tier.
+
+---
+
+## 11. Listening study — final facts (N = 116)
+
+Everything below is written up in the thesis Chapter 7 (Dataset). Numbers at N = 116 were reproduced offline from the five CSVs with the notebook's own §1.1–§1.2b logic (the reproduction matches the notebook exactly at N = 118).
+
+**Stimuli and recording.** 20 passages × 3 renditions, all played by the author: concerto, solo, orchestral/chamber parts played as a single line, and film themes. Pieces were chosen so that their EXP renditions would span the four quadrants (intended HA_HV 4, LA_HV 5, LA_LV 6, HA_LV 5 — from the author's metadata file, which is not part of the thesis). Composers (Table 7.1): Bach (BWV 1001 Adagio), Bruch (VC1), Morricone (Cinema Paradiso), R. Strauss (Don Juan), Rota (Godfather), Piovani (La vita è bella), Massenet (Méditation), Mendelssohn (VC E minor, II), Mozart (VC3 K. 216, VC4 K. 218), J. Williams (Schindler's List), R. Løvland (Song from a Secret Garden), Shostakovich (SQ8 ×3 passages, Sym. 5 I and III, VC1), **E. Tanzil (Serenade)**, Vitali (Chaconne, attr.). Home studio, commercial laptop, free DAW, **MOTU M4** interface, **AKG P120** (condenser) and **Shure SM57** (dynamic), 3 sessions. Exported mono WAV, 44.1 kHz, 16-bit PCM; excerpts ≈ 5–30 s. **Not loudness-normalized** (RMS −39.4 to −19.1 dBFS, peak ≤ −0.8 dBFS).
+
+**Performer instructions.** MEC: détaché, just the notes, one moderate dynamic, no vibrato, metronomic. EXP: normal interpretation — the composer's dynamics in full (pp–ff), normal vibrato, a little rubato and portamento, expressive but not excessive; colour per piece (e.g. spiccato in Mozart, flautando in Méditation / Secret Garden, sul G in Godfather). EXG: EXP taken to excess — extreme dynamics (mostly louder), excessively wide vibrato, extreme rubato and portamento, often heavy bow, glissandi, added accents.
+
+**Questionnaire.** 5 Google Forms; one link → Google Apps Script web app that redirects each visit to one of the 5 forms uniformly at random (no balancing, no log). Form sizes before screening 20/21/26/19/32, χ²(4) = 4.97, p = .29. Intro: purpose, ~15 min, anonymous, headphones + computer recommended. Four background items (training, listening frequency, age group, gender), then the 20 pieces **in the same alphabetical order in every form**. Per excerpt, three mandatory items (perceived framing): (1) "Which emotions do you think best describe this performance?" — 1–3 of Joyful activation, Power, Tension, Sadness, Tenderness, Peacefulness, Nostalgia, Neutral, **option order randomised per question** (all responses comply: 769 one tag, 987 two, 564 three at N = 116); (2) valence "How would you rate the mood of the piece?" 0 = Δυσάρεστη (unpleasant) … 6 = Ευχάριστη (pleasant); (3) arousal "What is the arousal level of the performance?" 0 = Απόλυτη Γαλήνη (complete calm) … 6 = Ένταση (intensity). Midpoint 3 unlabelled, treated as neutral. Limitations kept in the text: arousal anchors share words with the Peacefulness and Tension tags; the intro described the scales partly in felt terms. The form's typo in the arousal item is **not mentioned anywhere** (author's decision).
+
+| Group | Pieces | F1 | F2 | F3 | F4 | F5 |
+|---|---|---|---|---|---|---|
+| G1 | Mozart_VC4, Schindlers_List, SQ8_exrpt2, Sym5_Mvt1 | MEC | MEC | EXG | EXP | EXP |
+| G2 | Bach_Adagio_S1, Godfather, La_Vita_E_Bella, Mendelssohn_VC_Mvt2 | MEC | EXG | EXP | EXP | MEC |
+| G3 | Bruch_VC1, Don_Juan, Mozart_VC3, SQ8_exrpt3 | EXG | EXP | EXP | MEC | MEC |
+| G4 | Cinema_Paradiso, Secret_Garden, SQ8_exrpt1, Tanzil_Serenade | EXP | EXP | MEC | MEC | EXG |
+| G5 | Meditation_Thais, Sym5_Mvt3, Shostakovich_VC1, Vitali_Chaconne | EXP | MEC | MEC | EXG | EXP |
+
+**Participants (N = 116; 20/21/26/19/30 per form).** Collection 3 Apr – 7 Jun 2026. Training: none 26 (22.4%), amateur 12 (10.3%), conservatory 57 (49.1%), professional 21 (18.1%). Listening to classical/orchestral: never 7, rarely 22, monthly 25, weekly 27, daily 35. Age: under 18: 6 (none excluded), 18–24: 86, 25–34: 16, 35+: 8 (the thesis shows "Under 18" as its own row — the author asked to fold them into 18–24; that was not done because it would misstate their age). Gender: woman 57, man 56, other 3. Balanced across forms (training χ²(12) = 15.1, p = .24; frequency p = .59; age χ²(12) = 14.0, p = .30; gender p = .22). 2,320 ratings: 928 MEC, 928 EXP, 464 EXG; raters per excerpt MEC/EXP 41–50 (median 47), EXG 19–30 (median 21).
+
+**Screening v3.** Flags at N = 118: D1 5, D2 5 (simulated cut-off 14.55; χ² cut-off 8.57 would flag 29), D3 2, D4 1, D5 0 → 2 excluded (see §4 Cleaning).
+
+**Excerpt QC (N = 116).** ICC(1,k) V 0.965 / A 0.953; r_wg median 0.60 / 0.59 (min 0.13 / 0.28). Dip test unavailable → Sarle's bimodality coefficient: > 5/9 for 2 valence and 4 arousal excerpts, 5 of them ceiling-skewed; only `Secret_Garden_EXG` arousal looks split. Manipulation check: mean arousal MEC 3.18 < EXP 3.47 < EXG 3.68; EXG > MEC in 17/20 pieces; Kruskal–Wallis p < .05 in 8/20; strictly monotone in 9/20; inversions Bach (−0.52), Mendelssohn (−0.18), La Vita (−0.09).
+
+**Normalization (N = 116).** σ-floor never engaged. Maps V = 2.94 + 1.57z, A = 3.39 + 1.53z (raw grand mean 2.940 / 3.430; between-excerpt SD 1.082 / 0.965). Anchor |Δ| (40 anchors) V 0.342 → 0.338, A 0.276 → 0.253. Within-excerpt SD V 1.27 → 1.16, A 1.26 → 1.18. Raw ↔ normalized Pearson r 0.997 / 0.993. 8/60 classes change raw → normalized. Crossed additive (rater + excerpt) model: Spearman 0.993 / 0.991, same class for 53/60. (At N = 118, for comparison: V = 2.95 + 1.58z, A = 3.39 + 1.52z; anchors V 0.334 → 0.320, A 0.289 → 0.267; 10/60 class changes.)
+
+**Ground truth (N = 116).** HA_LV 20, LA_LV 17, HA_HV 11, Neutral 7, LA_HV 5 (N = 118: HA_LV 21, LA_LV 16). By condition: HA_HV 3/5/3, HA_LV 7/6/7, LA_LV 6/6/5, LA_HV 2/2/1, Neutral 2/1/4 (MEC/EXP/EXG). 15/20 pieces keep one class in all three renditions; 4 of the 7 Neutral excerpts are EXG. Only 10/20 EXP renditions land in their intended quadrant (5 differ in valence, 4 in arousal, 1 Neutral). Tag check: the modal tag class equals the VA class for 42/53 non-neutral excerpts; 8 of the 11 misses are HA_LV excerpts tagged mostly Sadness/Nostalgia; Neutral is never the modal tag. Tags: Tension 18.5%, Sadness 18.4%, Nostalgia 15.2%, Power 12.3%, Joyful activation 10.8%, Tenderness 10.1%, Neutral 7.3%, Peacefulness 7.3% (mean 1.9 tags per response).
+
+**Supporting scripts (qc_pack, outside the repo).** `questionnaire_cleaning_v3.py` (`--csv-dir --out`), `demographics.py` (`--csv-dir --out --exclude`), `excerpt_durations.py` (`--audio-dir --out`; the author ran it on Kaggle), `work/gt.py` + `gt2–4.py` (offline reproduction of §1.1–§1.2b and the QC numbers above).
+
+---
+
+## 12. Diploma thesis (LaTeX, NTUA template) — writing status 2026-10-30
+
+**Build.** `main.tex` (book class, `openany`, biblatex/biber, babel greek/english, TikZ/pgfplots). 73 pages now, cap 120 including front matter; target ≈ 113. Colour palette defined once in `main.tex` (`mecC` slate / `expC` blue / `exgC` vermilion for the conditions; `qHAHV` orange, `qHALV` red, `qLALV` blue, `qLAHV` green, `qNEU` grey for the classes; `stPerf/stTech/stSig/stList` for the performer → listener chain; macros `\cmec \cexp \cexg \swatch{}`) — **every new figure uses it**. Writing rule: a heading with substantial content is a numbered `\subsection` with a `subsec:` label (no `\subsection*` in the body chapters).
+
+| Ch. | Title | Pages | Status |
+|---|---|---|---|
+| — | Front matter (title pages, copyright, Περίληψη, Abstract, Ευχαριστίες, ToC/LoF/LoT, abbreviations) | 16 | done; placeholders: author name, committee, logo, dedication |
+| 1 | Εκτεταμένη Περίληψη (Greek) | 1 → 12 | skeleton; §1.1–1.2 writable now, rest after the results |
+| 2 | Introduction | 4 | done (chain figure, contributions reflect Phase B) |
+| 3 | Expressive Music Performance | 9 | done |
+| 4 | Music Emotion: Models and Measurement | 6 | done |
+| 5 | Computational Tools | 8 | done |
+| 6 | ML and Interpretability Preliminaries | 9 | done (nested CV, chance floors, Freedman–Lane, noise ceiling, screening incl. bimodality coefficient) |
+| 7 | Dataset: Design, Collection and Ground Truth | 9 | done, N = 116 numbers (§11); TODOs: recruitment, mean durations |
+| 8 | Proposed Framework | 0 → 10 | can be written now from the notebook (method, not results) |
+| 9 | Experiments and Results | 0 → 20 | after the N = 116 Phase B run |
+| 10 | Conclusion | 0 → 3 | last |
+| — | Bibliography | 8 | 109 entries |
+
+Planning doc with the full validation, page budget, figure/table/equation plan and checklists: "Διπλωματική: validation και πλάνο συγγραφής" (Claude Docs, sections 1–13; §13 = open items for the next chat).

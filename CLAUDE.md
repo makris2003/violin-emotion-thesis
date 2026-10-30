@@ -3,6 +3,12 @@
 > **Revision status: Phase B applied — results pending the next Kaggle run.** Phase A was applied
 > and run on Kaggle on 2026-10-09; its results (below) are **pre-Phase-B** wherever they depend on
 > CREPE / Essentia / timing features or on the default classifier (all of Parts 4–6).
+>
+> **Listening-study QC finalised (2026-10-21):** participant screening was re-validated on the CSVs
+> (screening v3) → **exclude `questionnaire_5_P012` and `questionnaire_5_P020`** (N = 118 → 116).
+> **Not yet wired into the notebook** — this is the next notebook edit, and the next Kaggle run
+> should be Phase B on N = 116. The thesis text (Ch. 7 Dataset) already reports N = 116 numbers;
+> details in `docs/thesis.md` §11–§12.
 
 ## Project
 Master's thesis: **expressive violin techniques → acoustic result → perceived audience emotion**,
@@ -12,9 +18,14 @@ attribution**, NOT a leaderboard — MERT is one tool category (the deep/SSL exe
 
 ## Dataset
 60 excerpts = 20 pieces × 3 conditions (MEC mechanical / EXP expressive / EXG exaggerated),
-recorded by the author playing violin. 118 participants across 5 **linked (ring)** forms rated
-**valence 0–6, arousal 0–6** (midpoint 3.0; `0` is a real rating, not NA) + emotion tags.
-Ring: 20/form, 8 anchors shared with each neighbour, 4 unique, 40 anchors total.
+recorded by the author playing violin. 118 responses (116 after screening) across 5 **linked
+(ring)** Google Forms rated **valence 0–6, arousal 0–6** (midpoint 3.0; `0` is a real rating, not
+NA) + 1–3 emotion tags (7 GEMS terms + Neutral).
+Ring: each form = all 20 pieces, one rendition each (8 MEC, 8 EXP, 4 EXG). Renditions follow a
+cyclic rotation of (MEC, MEC, EXG, EXP, EXP) over F1–F5, shifted by one form for each of 5 groups
+of 4 pieces → every MEC/EXP excerpt is in 2 adjacent forms (40 anchors, 8 shared per neighbour,
+F5↔F1), every EXG excerpt in 1 form (4 unique per form). Forms assigned by a uniform random URL
+redirect (Google Apps Script), no balancing, no log.
 Ground truth = **5 classes** (4 circumplex quadrants + Neutral) from **normalized** VA means.
 Stimuli were **NOT loudness-normalized** for the participants (level is part of the stimulus).
 
@@ -49,9 +60,17 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   from the §4.4b lattice stacks) · §6.2b guard.
 - **Part 7 — synthesis/save** (NestedSelect F1 per protocol + chosen configs, chance mean/P95, NB
   Phase A default F1, mean F1 of the 8 sensitivity classifiers).
-- **Cleaning (separate scripts):** questionnaire_cleaning.py (participant screening, MCD/
-  Mahalanobis etc.), excerpt_cleaning.py (stimulus QC, ICC, manipulation check). Exclusions
-  NOT yet applied (pipeline runs on all 118).
+- **Cleaning (separate scripts):** `questionnaire_cleaning.py` and `excerpt_cleaning.py` are the
+  original (months-old) scripts; **`questionnaire_cleaning_v3.py` supersedes the participant
+  screening** (v2 had four bugs: forms mixed in the Mahalanobis distance and person-total,
+  miscalibrated χ² MCD cut-off that flagged 30/118, LongString on the wrong item order, no
+  scale-reversal check). v3 detectors, exclude at ≥ 2 flags: D1 within-form leave-one-out
+  person-total r < 0.10 · D2 MCD distance on form-centred ratings > simulated 99.9th pct (14.55)
+  · D3 scale reversal (r ≤ −0.30 on one scale, ≥ +0.30 on the other) · D4 mean IRV outside
+  [0.25, 2.20] · D5 LongString ≥ 8 in answer order. Result: **2 excluded** (`questionnaire_5_P012`
+  D1+D2; `questionnaire_5_P020` D1+D3, reversed valence). Helper scripts `demographics.py`,
+  `excerpt_durations.py` (qc_pack, outside the repo unless the author adds them). **Exclusions
+  NOT yet applied in the notebook** (it still runs on all 118).
 
 ## Evaluation protocol (§4.0 — read before quoting any Part 4–6 number)
 - **`PRIMARY_PROTOCOL='piece'`** (leave-one-piece-out, `LeaveOneGroupOut` on `PIECE_GROUPS`);
@@ -307,11 +326,18 @@ statistics are unchanged by Phase B.
   and tested outside the notebook.
 
 ## Open issues
+- **NEXT NOTEBOOK EDIT — apply the exclusions:** in §1.1, drop `EXCLUDED_PARTICIPANTS =
+  ['questionnaire_5_P012', 'questionnaire_5_P020']` from `df_long` right after parsing (before
+  §1.1b, so normalization constants are re-derived on N = 116), print the before/after counts, and
+  assert 116 participants / 2,320 rows. Expected after the change (reproduced offline): norm maps
+  V = 2.94 + 1.57z, A = 3.39 + 1.53z; classes HA_LV 20, LA_LV 17, HA_HV 11, Neutral 7, LA_HV 5
+  (`Schindlers_List_EXP` moves HA_LV → LA_LV); anchor |Δ| V 0.342 → 0.338, A 0.276 → 0.253.
+  Every Part 1–7 number then changes slightly; the thesis waits for this run.
 - "8 emotions" is mechanically 5 classes (report as 5) · figure dedup partially pending ·
-  exclusions not applied · the ablation lattice is a DESCRIPTIVE map — never select the winning
+  the ablation lattice is a DESCRIPTIVE map — never select the winning
   subset on the same CV and then report its score · DTW forwarded 11 columns at N=60 in the
   2026-08-16 run (the §2.4b "outside 3–10" warning) — re-check with the Phase B timing family.
-- **`LA_HV` has n=5 from only 2 pieces** (La_Vita ×3, Meditation_Thais MEC+EXP) — under `piece`
+- **`LA_HV` has n=5 from only 2 pieces** (La_Vita ×3, Meditation_Thais MEC+EXP; same at N = 116) — under `piece`
   it is learned from one piece at a time; inner-CV tuning is skipped for it in many folds.
 - **Session map not provided yet** (`SESSION_MAP_CSV`, columns `excerpt_id, session`); gain
   equality across the 3 recording sessions is not independently verified (the performer reports
@@ -366,3 +392,11 @@ split. A vibrato null from the Phase B run is a **musical result at this N**, wi
 caveats: CREPE's 10 ms resolution, only notes ≥ 800 ms analysed, and the declared median
 substitutions (§2.2 prints the counts; ⚠️ if > 10 excerpts have no qualifying note — then the
 vibrato family is unreliable at this note length).
+
+## Thesis document (LaTeX, NTUA template) — status 2026-10-30
+The diploma thesis is written separately from the notebook (folder `thesis_work`, `main.tex`).
+Chapters 1–7 are written (73 pages of a 120-page cap); Ch. 8 Framework, Ch. 9 Experiments and
+Ch. 10 Conclusion are skeletons waiting for the N = 116 Phase B run. Full status, page budget and
+open items: `docs/thesis.md` §12 and the planning doc "Διπλωματική: validation και πλάνο
+συγγραφής". When pipeline numbers change, the thesis chapters that quote them are Ch. 7 (Dataset:
+normalization, classes) and, later, Ch. 9.
