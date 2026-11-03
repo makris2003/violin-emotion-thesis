@@ -1,19 +1,16 @@
 # Violin Expressiveness → Emotion Recognition
 
-A thesis project investigating how expressive performance techniques in solo violin shape the emotions listeners perceive, and how well modern audio representations can predict those emotions.
+Diploma thesis project (School of Electrical and Computer Engineering, NTUA): *Expressive Techniques in Solo Violin Performance and Their Effect on Perceived Emotion*. It follows the chain **expressive technique → acoustic result → perceived emotion** with an interpretable pipeline.
 
 ## Overview
 
-The project compares two families of audio features for perceived-emotion prediction:
-
-- **MERT** — a self-supervised music representation model (768-dim embeddings)
-- **CREPE** — interpretable low-level pitch features (vibrato, portamento, F0 statistics, voiced fraction)
+The project categorises the **tools** that detect a technique in the signal (CREPE pitch tracking, Essentia DSP, timing/DTW alignment, and the self-supervised MERT representation as one tool category — the opaque reference) and the **modalities** that measure its effect on the audience (valence–arousal ratings, emotion tags). It is an interpretable-attribution study, not a leaderboard.
 
 It asks three questions:
 
-1. Do self-supervised embeddings outperform hand-crafted acoustic features for predicting perceived emotion?
-2. Does combining both feature families outperform either alone?
-3. Which performance techniques are associated with which emotions?
+1. Which techniques does the performer escalate across MEC → EXP → EXG, and which of them reach the listeners as valence or arousal?
+2. Can perceived emotion be attributed interpretably to technique, and what does that explainability cost relative to the opaque representation?
+3. Where do the interpretable features and the SSL representation agree or complement each other?
 
 ## Dataset
 
@@ -21,8 +18,8 @@ It asks three questions:
   - `MEC` — mechanical (neutral baseline)
   - `EXP` — expressive (natural)
   - `EXG` — exaggerated (heightened expression)
-- **118 participants** across 5 listening sessions rated each excerpt on **valence (0–6)**, **arousal (0–6)**, and tagged the perceived emotions.
-- Emotions are organized on the valence–arousal circumplex: Tenderness, Nostalgia, Peacefulness, Power, Joyful Activation, Tension, Sadness, and Neutral.
+- **118 responses** across 5 linked online forms (**116 after participant screening**) rated each excerpt on **valence (0–6)**, **arousal (0–6)**, and tagged 1–3 perceived emotions (Tenderness, Nostalgia, Peacefulness, Power, Joyful Activation, Tension, Sadness, Neutral).
+- Ground truth = **5 classes** (the 4 valence–arousal circumplex quadrants + Neutral) from rater-normalised means. Leave-one-piece-out is the primary evaluation protocol; LOOCV is reported as the optimistic secondary.
 
 *Audio and questionnaire data are not included in the repository.*
 
@@ -36,7 +33,7 @@ violin-emotion-thesis/
 │   ├── questionnaire_cleaning.py  # participant-level response screening
 │   └── excerpt_cleaning.py        # excerpt/stimulus quality checks
 ├── docs/
-│   └── thesis_handoff.md          # detailed project notes
+│   └── thesis.md                  # detailed project notes (status, findings, open issues)
 ├── CLAUDE.md                      # project context
 ├── .gitignore
 └── README.md
@@ -44,19 +41,17 @@ violin-emotion-thesis/
 
 ## Methods
 
-**Feature extraction.** Each excerpt is encoded with MERT (embeddings averaged over mid-stack transformer layers) and with CREPE-derived pitch features, giving three feature sets: MERT, CREPE, and Combined.
+**Feature extraction.** Each excerpt is encoded with MERT (embeddings averaged over transformer layers 5–7), CREPE-derived pitch descriptors (vibrato, portamento, F0), Essentia DSP descriptors (dynamics, timbre, tonal) and timing/DTW descriptors, each reduced by one shared unsupervised forwarding gate.
 
-**Classification.** Multi-label emotion prediction with Leave-One-Out Cross-Validation across several classifiers, evaluated per feature set.
+**Prediction.** 5-class classification with nested model selection and valence/arousal regression with nested ridge, under leave-one-piece-out (primary) and LOOCV (secondary), against re-seeded chance floors; within-piece prediction with permutation tests and a noise ceiling; a block-lattice ablation study.
 
-**Regression.** Continuous valence and arousal prediction (Ridge / SVR / MLP).
+**Attribution.** Condition deltas, dose-response (Page's trend), SHAP, an interpretable linear read-out and the cost of explainability against MERT.
 
-**Technique–emotion analysis.** Two complementary views: SHAP feature importance (which techniques predict each emotion) and condition-delta analysis (how technique changes across conditions relate to changes in perceived emotion).
-
-**Participant & excerpt screening.** Standalone scripts apply established quality-control methods — robust Mahalanobis distance (MCD), leave-one-out person-total correlation, response-variability and long-string checks for participants; one-way ICC reliability, agreement (rWG), and per-piece manipulation checks for excerpts.
+**Participant & excerpt screening.** The participant screening that sets the exclusions (v3) and the excerpt QC run outside the notebook. The two scripts in `scripts/` are the original (older) versions.
 
 ## Setup
 
-The pipeline is developed for a **Kaggle GPU environment (NVIDIA P100)**.
+The pipeline runs on **Kaggle with a GPU**. torch is pinned to 2.3.1 for the P100 (sm_60); the recorded runs used a Tesla T4.
 
 ```bash
 # core dependencies
@@ -84,4 +79,4 @@ The project is version-controlled on GitHub and executed on Kaggle (linked via K
 
 ---
 
-*Master's thesis — music information retrieval / affective computing.*
+*Diploma thesis (NTUA, School of ECE) — music information retrieval / affective computing.*

@@ -2,9 +2,9 @@
 
 **Purpose:** complete standalone context to continue work in a fresh conversation. Covers (1) scope, (2) current pipeline architecture, (3) progress, (4) findings, (5) open issues, (6) technical report status, (7) conventions, (8) workflow, (9) quick answers, (10) audit, **(11) listening study — final facts (N = 116)**, **(12) diploma thesis (LaTeX) — writing status**.
 
-> **Latest (2026-10-30):** the listening-study QC is final (2 exclusions → N = 116, §11) but **not yet applied in the notebook** — the next notebook edit wires the exclusions into §1.1 and the next Kaggle run is Phase B on N = 116. The diploma thesis (NTUA template, LaTeX) has Chapters 1–7 written, 73 of a 120-page cap (§12).
+> **Latest (2026-11-03):** the **Phase B run on N = 118 is done** (Kaggle, Tesla T4, papermill 2026-10-09 23:45 → 2026-10-10 01:22 UTC, ≈ 97 min, 101 cells, 0 errors) — §4 now records those results, labelled **N = 118 / pre-block-weighting**. Applied in the notebook since then (now **104 cells**), not yet run: the participant exclusions in §1.1 (N = 118 → 116), **equal-share block weighting** of the multi-block MERT-full regression heads (`REG_BLOCK_WEIGHTING`, tier `4E-block-weighting`) and the **temporary §2.6 manual descriptor audit**. **Next Kaggle run:** interactively up to §2.6 first (inspect the audit), then the full run. The diploma thesis (NTUA template, LaTeX) has Chapters 1–7 written, 73 of a 120-page cap (§12).
 
-> **Revision status (current): Phase B applied — results pending the next Kaggle run.** Phase B (descriptor repairs + analysis upgrades, §10) is in the notebook (still 101 cells). Phase A was applied and run on Kaggle (2026-10-09, GPU T4, 101 cells, 0 errors); §4 records those verified results, which are **pre-Phase-B** wherever they depend on CREPE / Essentia / timing features or on the default classifier (all of Parts 4–6, §2.3c). Part 1 and the §1.x statistics are unchanged by Phase B. Every Part 4/5/6 predictive number from runs before Phase A is pre-audit and superseded.
+> **Revision status (current): Phase B run on N = 118; N = 116 + block weighting + §2.6 audit applied, pending the next run.** Phase A was applied and run on Kaggle (2026-10-09); its numbers (kept in §10 as history) are superseded by the Phase B run. Every Part 4/5/6 predictive number from runs before Phase A is pre-audit and superseded.
 >
 > **Earlier revision note:** This supersedes the older "validation-mode (MERT+CREPE only)" handoff. The pipeline has since gained **per-rater normalization** (new ground truth), an **active Essentia block** (dynamics/timbre/tonal), a **shared leakage-free forwarding gate** for every tool, a full **Part 5 attribution suite** and **Part 6 tool-characterization**, and the **MFCC baseline was removed**. The interpretable-feature narrative has moved **from vibrato to dynamics/timbre + pitch**. **DTW (timing/rubato) is implemented and wired end-to-end (§2.4/§2.4b)** and a **systematic ablation study** (§4.4b/c/d + §5.6, one shared engine, two CV protocols, FDR-corrected) was added; **both were executed in the Kaggle run of 2026-08-16**. Notebook: `notebook/thesis_pipeline.ipynb`, **95 cells**, Kaggle P100.
 
@@ -31,23 +31,23 @@ The brief defines the spine **technique → acoustic → audience** plus two cat
 ### 1.3 Dataset
 
 - **60 excerpts = 20 pieces × 3 conditions** — `MEC` mechanical / `EXP` expressive / `EXG` exaggerated. **Recorded by the thesis author playing violin.**
-- **118 responses across 5 linked Google Forms; 116 after screening** (exclude `questionnaire_5_P012`, `questionnaire_5_P020`; §11). Ratings: **valence 0–6**, **arousal 0–6**, plus 1–3 emotion tags per excerpt (7 GEMS terms + Neutral).
+- **118 responses across 5 linked Google Forms; 116 after screening** (exclude `questionnaire_5_P012`, `questionnaire_5_P020`; §11 — applied in notebook §1.1 via `EXCLUDED_PARTICIPANTS` since 2026-11-03). Ratings: **valence 0–6**, **arousal 0–6**, plus 1–3 emotion tags per excerpt (7 GEMS terms + Neutral).
 - **Ring (linked) form design:** every form holds all 20 pieces, one rendition each (8 MEC, 8 EXP, 4 EXG). Renditions follow a **cyclic rotation of (MEC, MEC, EXG, EXP, EXP)** over F1–F5, shifted by one form for each of 5 groups of 4 pieces (§11). So every MEC/EXP excerpt is in two adjacent forms (**8 anchors shared with each neighbouring form**, F5↔F1) and every EXG excerpt in one (**4 unique per form**): the five forms connect cyclically through **40 anchor excerpts**. This linking underpins the normalization validation (§3/§1.2b). Each listener hears each piece once.
 - **Scale 0–6** (7 points, midpoint **3.0**). `0` is a genuine lowest rating (verified in raw forms), **not** NA. `VA_MID = 3.0` — correct, do not change.
 - **Ground truth = 5 classes** (4 circumplex quadrants + Neutral), derived from **normalized** VA means (see §1.1b flow). `NEUTRAL_RADIUS = 0.75` (un-tuned — see open issues).
 
-**Environment:** Kaggle, P100 GPU, PyTorch 2.3.1 (last sm_60 build).
+**Environment:** Kaggle GPU, PyTorch 2.3.1 — pinned for the P100 (last sm_60 build); the Phase A and Phase B runs used a Tesla T4, which 2.3.1 also supports, so the pin is kept.
 
 ---
 
-## 2. Pipeline Architecture (current, 101 cells — Phase B applied)
+## 2. Pipeline Architecture (current, 104 cells — Phase B + N = 116 exclusions + block weighting + temporary §2.6 audit)
 
 Runs top-to-bottom. `§` = the in-notebook section banners.
 
 | Part | § | Content |
 |---|---|---|
 | **0 Setup** | 0.1–0.4 | install / imports / **config** (`VA_MID=3.0`, `NEUTRAL_RADIUS=0.75`, `MERT_LAYERS=[5,6,7]`, `QUADRANT_EMOTIONS`, tag maps) / audio manifest |
-| **1 Audience ground truth** | 1.1 | parse 5 CSVs → `df_long` (keeps `0`) |
+| **1 Audience ground truth** | 1.1 | parse 5 CSVs → `df_long` (keeps `0`) → **drop `EXCLUDED_PARTICIPANTS`** (screening v3; asserts 116 participants / 2,320 rows / 60 excerpts, prints 118 → 116) |
 | | **1.1b** | **per-rater normalization → new ground truth** (per-dim z, σ-floor, rescale preserving grand-mean + between-excerpt SD) |
 | | 1.2 | aggregate → `df_agg`; derive 5-class labels from **normalized** VA; raw kept in parallel |
 | | **1.2b** | **normalization validation** (anchor cross-form Δ, quadrant stability, corr, variance) |
@@ -59,21 +59,22 @@ Runs top-to-bottom. `§` = the in-notebook section banners.
 | | 2.3 / **2.3b** | **Essentia** (dynamics/timbre/tonal) — Phase B: flux on L1-normalised spectra (B11), silence-gated dynamic range (B12) / **controlled Essentia forwarding** |
 | | **2.3c** | **recording-level sanity check** (report only) — peak/clipping, LUFS robust z, within-piece LUFS, **spectral-flatness noise floor** "recording-chain change" test (B-NF), optional session map |
 | | 2.4 / **2.4b** | **timing + DTW (ACTIVE)** — reference-free `timing_*` family (CREPE note onsets + 151-frame tempogram with log-normal prior, B13) + within-piece `dtw_*` warp-path family / **controlled forwarding**. madmom / MusiCNN remain skip stubs |
-| | 2.5 | assemble `X_A/B/C/D/F`, `X_MERT_FULL`, regression twins `X_C_REG/X_D_REG/X_F_REG` (B-MERTFULL); `STRICT_BLOCKS` guard; no pre-Phase-B cache name |
+| | 2.5 | assemble `X_A/B/C/D/F`, `X_MERT_FULL`, regression twins `X_C_REG/X_D_REG/X_F_REG` (B-MERTFULL, stored raw); `STRICT_BLOCKS` guard; no pre-Phase-B cache name |
+| | **2.6** | **TEMPORARY manual descriptor audit** (between `# >>> AUDIT` / `# <<< AUDIT`; `RUN_MANUAL_AUDIT`, `AUDIT_EXCERPTS` = Méditation + Mozart VC4 × MEC/EXP/EXG; `_aud_*` names; writes only `manual_audit/`): recomputes the 30 interpretable features with the pipeline's own code and asserts equality; audio players, overview + zoom figures, notes / transitions / key / LUFS tables, direction checks, checklist template. Removable |
 | **3 Validation & EDA** | 3.1–3.4 | class floors · VA/coverage · CREPE sanity · **3.3b DTW timing sanity + manipulation check** · MERT structure (PCA scree) |
-| **4 Prediction** | **4.0** | **evaluation protocol & CV engine** — `get_cv` (piece = PRIMARY, loo = secondary), **nested model selection default** (`cv_predict_nested_select`, B-NMS; parallel == serial guard), `cv_predict_multilabel`, `nested_ridge_predict`, `oos_r2`/`rmse`, `bh_fdr`, Freedman–Lane + split-half helpers, re-seeded Dummy floors (mean/SD/P95), equivalence guard |
+| **4 Prediction** | **4.0** | **evaluation protocol & CV engine** — `get_cv` (piece = PRIMARY, loo = secondary), **nested model selection default** (`cv_predict_nested_select`, B-NMS; parallel == serial guard), `cv_predict_multilabel`, `nested_ridge_predict` (+ optional `block_sizes`: `block_weights` / `BlockScaler`, equal-share block weighting; guard on `X_C_REG`), `oos_r2`/`rmse`, `bh_fdr`, Freedman–Lane + split-half helpers, re-seeded Dummy floors (mean/SD/P95; prevalences printed from `Y`), equivalence guard |
 | | 4.1 | multi-label classification — NestedSelect (★default) + **8-classifier sensitivity table** (not used for selection; NaiveBayes = Phase A default), both protocols; balanced + inner-CV C for SVM/LogReg (A5) |
 | | 4.2 | valence/arousal regression (fixed models + `Ridge-nested · MERT-full`), both protocols, r · R² · RMSE |
 | | 4.4 | feature-set table + Wilcoxon (four hand-picked sets), per protocol |
-| | **4.4b** | **ablation engine + block lattice** — all 15 subsets of {MERT, CREPE, Essentia, DTW}; unique vs marginal contribution per tool |
-| | **4.4c** | **configuration ablation** — `MERT_PCA_VAR` · Essentia curation · DTW family · shared-gate `corr_max` · **`4D-balancing`** (nested selection = reference; NB priors / SVM balancing, descriptive). `4A-crepe-portamento` removed in Phase B |
+| | **4.4b** | **ablation engine + block lattice** — all 15 subsets of {MERT, CREPE, Essentia, DTW}; unique vs marginal contribution per tool; multi-block MERT-full regression heads use the deployed block weighting (`_abl_reg_kw`, rows record `block_weighting` + α grid-edge hits) |
+| | **4.4c** | **configuration ablation** — `MERT_PCA_VAR` · Essentia curation · DTW family · shared-gate `corr_max` · **`4D-balancing`** (nested selection = reference; NB priors / SVM balancing, descriptive) · **`4E-block-weighting`** (the 7 multi-block MERT-full regression heads, unweighted vs equal-share weighted; Δ, paired permutation, BH over the regression metrics; descriptive). `4A-crepe-portamento` removed in Phase B |
 | | **4.4d** | **target-side ablation** — `NEUTRAL_RADIUS` 0.5/0.75/1.0 (macro-F1 with *and* without Neutral) · normalized vs raw ground truth |
 | | 4.5 / **4.5b** | per-class P/R/F1 (default on X_C) / **DummyClassifier floors** (the official floor; mean, SD, P95 over 200 re-seeded repeats) |
 | | 4.6 | per-condition F1 (MEC/EXP/EXG), default on X_C |
 | | 4.7 | quadrant accuracy from predicted VA (+ VA scatter, circumplex), both protocols |
 | | 4.8 | prediction–ground-truth agreement (Krippendorff α), default on X_C |
 | | **4.9** | **within-piece prediction** — piece-centred targets & features, piece CV only, Condition-only reference, within-piece permutation p; **B-INC** Freedman–Lane incremental test (Condition + Features vs Condition-only); **B-NC** split-half noise ceiling |
-| **5 Attribution** | 5.1 | **condition-delta** — technique change vs rating change (within-piece); **BH-FDR over all 174 tests** |
+| **5 Attribution** | 5.1 | **condition-delta** — technique change vs rating change (within-piece); **BH-FDR over all 180 tests** (30 features × 2 targets × 3 transitions) |
 | | **5.1b** | **dose-response** — Page's trend test over ordered MEC<EXP<EXG |
 | | 5.2 | **SHAP** technique importance per class |
 | | 5.3 | **embedding-distance** attribution |
@@ -103,6 +104,8 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 ## 3. Progress since the previous handoff
 
+- **Notebook edits for the next run (2026-11-03, not yet run).** (1) Participant exclusions wired into §1.1 (`EXCLUDED_PARTICIPANTS` in §0.3; asserts 116 participants / 2,320 rows / 60 excerpts; §1.4 prints the exclusions, the old `df_long_clean` branch is gone; §4.0 prints the prevalences from `Y` instead of the hardcoded N = 118 ones). (2) **Equal-share block weighting** of the multi-block MERT-full regression heads (`block_weights`, `BlockScaler`, `REG_BLOCK_WEIGHTING = 'equal'`; §4.0 guard; §4.4b/§4.4d heads; new tier `4E-block-weighting`). (3) **Temporary §2.6 manual descriptor audit** (6 excerpts). (4) Descriptive text made accurate (diploma thesis / NTUA, thesis framing and questions, torch pin = P100 / runs = T4, stale markdown in §2.5, §4.1, §5.2, §5.4, §6.1, §6.2, output reference). The notebook is now 104 cells.
+- **Phase B run on N = 118 (papermill 2026-10-09 23:45 → 2026-10-10 01:22 UTC, T4, ≈ 97 min, 101 cells, 0 errors).** Results in §4. It surfaced the MERT-dominance problem of the multi-block regression heads (→ block weighting) and several descriptor questions (→ §2.6 audit, §5).
 - **Listening-study QC re-validated and finalised (2026-10-21).** The months-old cleaning scripts were checked against the five CSVs; the participant screening was rewritten (`questionnaire_cleaning_v3.py`, four bugs fixed — §11) → 2 exclusions. Excerpt QC re-run at N = 116. Demographics and durations scripts written. The normalization and ground truth were reproduced offline: at N = 118 the reproduction matches the notebook exactly, so the N = 116 numbers in §11 are what the notebook will produce once the exclusions are wired in.
 - **Diploma thesis Chapters 1–7 written (2026-10-18 → 2026-10-30)** — front matter, Introduction, background Chapters 3–6 rewritten against Phase B, Chapter 7 Dataset written from scratch with N = 116 numbers; colour palette for all figures; numbered subsections. See §12.
 
@@ -125,9 +128,39 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 ## 4. Current findings
 
-> **Phase A results (Kaggle run of 2026-10-09, GPU T4) — pre-Phase-B.** All verified from that run's outputs. Phase B changes every CREPE / Essentia / timing feature and the default classifier, so every number below that depends on them (classification, regression on feature sets, CoE, §4.9, §5.x, §6.x, §2.3c floors, the dose-response headline) is **pre-Phase-B** and will be superseded by the next run; the normalization / variance-structure / cleaning facts are unchanged. Pre-audit LOOCV numbers (e.g. CoE +0.112 / +0.051 / +0.145) are superseded.
+> **Phase B results — Kaggle run on N = 118 (papermill 2026-10-09 23:45 → 2026-10-10 01:22 UTC, Tesla T4, 101 cells, 0 errors), pre-block-weighting.** Verified from the run's outputs in the committed notebook. The next run (N = 116, block weighting, §2.6 audit) supersedes them; every multi-block MERT-full regression number below is unweighted.
 
-**Guards.** All passed: §4.0 engine equivalence, §4.4b lattice rebuild, §4.4d label reproduction, §6.2b, §4.9 closed-form permutation equivalence, §5.5↔§5.4 cross-check. 101 cells, 0 errors.
+**Guards.** All passed (§4.0 equivalence, NestedSelect parallel == serial on 4 CPUs, §4.4b lattice rebuild incl. the `_REG` matrices, §4.4c 4D, §4.4d label reproduction, §4.9 closed-form equivalence incl. B-INC, §5.5↔§5.4, §6.2b exact, §2.5 cache names).
+
+**§2.2 CREPE.** Octave fixes 3 frames in 3 excerpts. Notes ≥ 800 ms: 259 (600 ms: 391, 1000 ms: 198); no qualifying note in 1 excerpt (`Shostakovich_SQ8_exrpt3_MEC`). 121 vibrato notes; rate undefined → declared median 5.811 Hz for 23 excerpts (all MEC with notes, plus SQ8 exrpt1 EXP/EXG and exrpt3 EXP/EXG — the author confirmed by ear that no vibrato was played there, so these are correct rejections). Rate 37 distinct values; half-extent 0–32.1 c; coverage 0–1. Portamento: 139 glides in 572 transitions (24.3 %), 50–312 ms (median 62), 80–1907 c. F0 range max 3100 c. 1626 notes ≥ 60 ms, 17 adjacent notes < 70 c apart.
+
+**§2.3 / §2.3c Essentia, recording level.** DR gate median 6.2 % of frames (max 26 %), DR max 34.7 dB; 6 of the 9 gate variants have ρ < 0.9 vs the deployed DR (0.79–0.85). r(flux, LUFS) raw 0.874 → normalised 0.508. Forwarded 10 (short-term loudness SD dropped, r 0.97 with LRA). Flatness noise floor: 0/60 conclusive at FLAT_MIN 0.2 (9 at 0.1); 0 flags; LUFS by condition MEC −26.8, EXP −24.1, EXG −22.6; session map not provided.
+
+**§2.4 / §3.3b timing.** DTW forwarded 10 (7 reference-free + 3 deviation; inside 3–10, no warning). Group means: tempo log2-SD MEC 0.261 > EXP 0.232 > EXG 0.209; IOI CV / SD and pulse clarity not monotone (0/3 non-decreasing). Author's explanation (2026-11-03): in EXG he played faster and more virtuosically in fast pieces and took more time in slow ones → local tempo / duration ratio are piece-dependent; tempo log2-SD and pulse clarity are checked visually in §2.6.
+
+**Chance floors.** piece: uniform mean 0.2715, stratified 0.161, strict P95 0.3274; loo: 0.2720 / 0.183 / 0.3202.
+
+**Classification (NestedSelect default).** piece: A 0.282, **B 0.361 (the only set above the strict P95)**, C 0.302, D 0.281; loo: A 0.517, B 0.476, C 0.626, D 0.540. NaiveBayes (Phase A default) piece: A 0.112, B 0.260, C 0.162, D 0.126. On X_C (piece) LA_HV and Neutral collapse (recall 0); per condition MEC 0.24 / EXP 0.29 / EXG 0.32; Krippendorff α HA_HV 0.31, LA_LV 0.31, others ≤ 0.03. Tier 4D (piece): Interp + SVM-Linear balanced + inner-CV C 0.417 [0.346, 0.475] (Δ +0.063 vs nested, q = 0.13); NB below nested on X_A / X_C / Interp (q ≤ 0.017).
+
+**Regression (nested ridge, piece).** Ridge-nested · MERT-full R²v +0.016, R²a +0.446. Lattice: Essentia + DTW R²v 0.29, **R²a 0.67** (best); CREPE + Essentia + DTW R²a 0.60; every set containing MERT-full R²a 0.446–0.459 and R²v 0.014–0.019 — the 768 MERT columns dominate a single-α ridge (→ equal-share block weighting, next run). 4A-mert-pca: R²a PCA −0.25 vs full +0.45 (Δ +0.70, q = 0.0015), R²v −0.17 vs +0.02 (q = 0.039), F1 0.28 vs 0.33 (n.s.) — PCA-95 keeps the high-variance (piece-identity) directions and discards the emotion-relevant variance. Quadrant accuracy (fixed Ridge α = 10 on X_A) 0.25 piece / 0.62 loo.
+
+**§4.4b unique contributions (piece).** F1: MERT −0.053, CREPE −0.045, Essentia −0.051, DTW +0.036 (none significant); full set F1 0.302 (below P95). **§4.4d:** NEUTRAL_RADIUS 1.0 beats 0.75 on both columns for X_A and X_C (rule triggers — pending decision); raw ground truth F1 0.34 vs normalised 0.30.
+
+**§4.9 within-piece (piece-centred, LOPO).** Noise ceilings (split-half, centred): V 0.455 [0.088, 0.718], A 0.678 [0.520, 0.813]. Δvalence: Condition-only R² 0.047 (p 0.034), Interpretable 0.174 (p 0.006), MERT-full 0.175, MERT-PCA 0.134; **B-INC incremental ΔR² Interpretable +0.129 (q 0.037), MERT-full +0.128 (q 0.037), Interp + MERT-PCA +0.117 (q 0.037)**, MERT-PCA +0.077 (q 0.070). Δarousal: Condition-only 0.408, Interpretable 0.423, incremental +0.024 (p 0.044, q 0.070); the MERT sets add nothing. R²/ceiling (Interpretable) V 0.38, A 0.62.
+
+**§5.1 BH.** 180 tests (30 features × 2 targets × 3 transitions): 10 raw p < .05 vs 9.0 expected, **0 q < .05** → the condition-delta correlations are **not evidence; do not cite them as findings**.
+
+**§5.1b dose-response (Page, 20 pieces).** Techniques: spectral flux (normalised) z +5.22, **vibrato extent +5.14, vibrato coverage +4.90**, LUFS +4.74, DTW deviation +4.59 (built in at MEC), DR +4.11, rolloff −2.85, **tempo log2-SD −2.21 and local tempo −2.06 (both decrease)**; vibrato rate +1.90 n.s.; portamento n.s. Audience: arousal z +4.11, valence +1.26 n.s. → with the repaired descriptor, **vibrato extent/coverage do escalate**; arousal (not valence) follows the manipulation.
+
+**§5.4 / §5.5 cost of explainability (piece; negative = interpretable wins).** Read-out V r 0.25 / R² 0.12, A r 0.77 / R² 0.62. Interpretable F1 0.353, R²v 0.120, R²a 0.620 vs MERT-PCA 0.282 / −0.171 / −0.252 and MERT-full 0.328 / 0.016 / 0.446. Headline ΔR valence −0.181, ΔR arousal −0.140, ΔR² valence −0.104, ΔR² arousal −0.174, ΔF1 −0.071; vs MERT-PCA ΔR² arousal −0.872.
+
+**§5.6 sub-families (piece).** Removing Portamento raises F1 to 0.465 (loss −0.112, q 0.015) and removing Timbre to 0.424 (q 0.009) — consistent with portamento false alarms (under audit); removing Dynamics costs R²a 0.090 (q 0.11); Dynamics alone R²a 0.44; Vibrato alone F1 0.28, R²a 0.04.
+
+**§6.1b probe / §6.2.** Flux 0.86, F0 mean 0.80, centroid 0.73, HPCP entropy 0.73, pulse clarity 0.71, note rate 0.65, vibrato coverage 0.48, F0 range 0.43; LUFS 0.08; vibrato rate −0.02. α hit the grid edge in **34** outer folds. §6.2 (piece): + all CREPE +0.057, + DTW +0.052, + Essentia −0.001, + 2 CREPE-unique −0.019. Master ablation table 138 rows / 9 tiers.
+
+### Historical — Phase A run (2026-10-09; superseded by the Phase B run above)
+
+**Guards (Phase A).** All passed: §4.0 engine equivalence, §4.4b lattice rebuild, §4.4d label reproduction, §6.2b, §4.9 closed-form permutation equivalence, §5.5↔§5.4 cross-check. 101 cells, 0 errors.
 
 **Dummy floors fixed.** Uniform mean 0.272 (loo) / 0.2715 (piece); stratified 0.183 / 0.161; strict P95 0.320 (loo) / 0.327 (piece).
 
@@ -141,41 +174,65 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 **§4.9 within-piece (piece-centred, LOPO).** Δarousal — Condition-only R² 0.41, Interpretable 0.47 (p=0.002), MERT-full 0.38, MERT-PCA 0.27. Δvalence — Condition-only 0.047 (p=0.034), Interpretable 0.20 (p=0.004), MERT-full 0.175, MERT-PCA 0.134. Within-piece SD: V 0.234, A 0.285 (scale 0–6). The "beats condition" difference was not yet tested (→ Phase B B-INC).
 
-**§5.1 BH.** 0 of 174 tests have q < .05 (12 raw p < .05 vs 8.7 expected) → the condition-delta correlations are **not evidence; do not cite them as findings**.
+**§5.1 BH (Phase A).** 0 q < .05 (12 raw p < .05) over the Phase A family (29 interpretable features then; the current §5.1 runs 180 tests — see above).
 
-**§6.1b grouped probe.** Well represented across pieces — F0 mean 0.80, spectral centroid 0.73, HPCP entropy 0.73, pulse clarity 0.59; loudness only 0.08; most reference-free timing features ≤ 0. α hit the grid edge (10000) in 32 folds (= shrink to the mean; harmless for those targets).
+**§6.1b grouped probe (Phase A).** F0 mean 0.80, spectral centroid 0.73, HPCP entropy 0.73, pulse clarity 0.59; loudness 0.08 (the α grid-edge count is 34 outer folds in the Phase B run — the earlier "32" is superseded).
 
 **§2.3c recording level.** 0 LUFS outliers, 0 clipping, 21 noise-floor flags (15 excerpts inconclusive). EXG conclusive floor mean −66.2 dBFS vs MEC −71.4 / EXP −72.5; EXG LUFS +4.2 LU vs MEC. Facts from the author: 3 recording sessions with position markers; in EXG the performer deliberately played louder. Equality of gain across sessions is **not independently verified** (limitation); the 5th-percentile floor estimator is unreliable when an excerpt has no silence (→ Phase B B-NF). A session map is not available yet.
 
+### Facts not changed by Phase B (Part 1 at N = 118 unless stated; N = 116 values in §11)
+
 **Variance structure (audit).** 95% of valence and 91% of arousal variance across the 60 excerpts is **between-piece**; the condition explains **1% (V) / 4% (A)**. LOOCV (which keeps a piece's other two renditions in training) therefore mostly measures piece recognition; leave-one-piece-out and the within-piece analysis (§4.9) are the honest tests.
 
-**Headline 2 — escalation via dynamics & timbre, not vibrato (contrarian) — pre-Phase-B, obtained with the OLD (broken) vibrato descriptor and the raw (loudness-confounded) flux; both were replaced in Phase B (B8, B11), so this headline must be re-read from the next run.** Dose-response (Page's trend, 20/20 complete pieces): **spectral flux z=+5.38\*\*\***, **loudness z=+4.74\*\*\*** rise; **rolloff z=−2.85\*\*** falls; **vibrato rate z=+1.26 n.s.** Audience side: **arousal z=+4.11\*\*\*** vs **valence z=+1.26 n.s.** ⚠️ Note the honest nuance: the mean EXG−MEC for vibrato is *positive* (rate +0.234, depth +1.903) — vibrato does rise on average, but **non-monotonically/inconsistently** (only 10–30% of pieces monotone), which is why it is n.s. The correct claim is "vibrato change is weaker and less consistent **with the current mean descriptor**," not "vibrato does nothing." A richer vibrato descriptor (coverage/extent, note-level) may recover it — open question.
+**Former "Headline 2" (escalation via dynamics & timbre, not vibrato) — withdrawn.** It came from the Phase A dose-response with the broken vibrato descriptor and the raw flux. In the Phase B run the repaired vibrato extent / coverage escalate strongly (z +5.14 / +4.90) next to normalised flux and loudness; only the vibrato *rate* stays n.s. (see §5.1b above).
 
 **Normalization validation.** Raw grand mean V=2.97 / A=3.40 (arousal legitimately skews high); between-excerpt SD V=1.065 / A=0.956 (preserved); anchor cross-form |Δ| baseline **V=0.334 / A=0.289**; raw↔norm Pearson r = **0.996 (V) / 0.993 (A)**; **10/60 excerpts change class, 4/60 change quadrant** (the earlier "0/60 flips" claim was wrong). Per-rater min SD 0.51/0.54 → the σ-floor **never fires** (insurance, not active). **Conclusion (unchanged): normalization is a defensibility/robustness step — it confirms the signal is real, not a rater artifact; no material change in results.**
 
 **Stimulus level.** The stimuli played to participants were **not loudness-normalized** (confirmed by the author): level differences between excerpts are part of the stimulus. §2.3c (Phase A) only checks that no recording was made at a clearly different gain/microphone distance.
 
-**Cleaning (final, 2026-10-21 — supersedes the earlier "3 flagged, decision pending").** Screening v3 excludes **2 of 118** (`questionnaire_5_P012`: D1+D2, r = −0.20, MCD 18.4; `questionnaire_5_P020`: D1+D3, valence r = −0.57 / arousal r = +0.78, reversed valence scale). The old "3 flagged" came from the buggy v2 scripts. Kept: `questionnaire_1_P006` (extreme but consistent responder, r = 0.83, D4 only); sensitivity set with near-zero agreement and one flag: `questionnaire_3_P014`, `questionnaire_4_P010`, `questionnaire_5_P018`. Excerpt QC at N = 116: ICC(1,k) V 0.965 / A 0.953; median r_wg 0.60 / 0.59; arousal EXG < MEC in Bach_Adagio_S1 (−0.52), Mendelssohn_VC_Mvt2 (−0.18), La_Vita_E_Bella (−0.09). Full numbers in §11. **Exclusions not yet applied in the notebook.**
+**Cleaning (final, 2026-10-21 — supersedes the earlier "3 flagged, decision pending").** Screening v3 excludes **2 of 118** (`questionnaire_5_P012`: D1+D2, r = −0.20, MCD 18.4; `questionnaire_5_P020`: D1+D3, valence r = −0.57 / arousal r = +0.78, reversed valence scale). The old "3 flagged" came from the buggy v2 scripts. Kept: `questionnaire_1_P006` (extreme but consistent responder, r = 0.83, D4 only); sensitivity set with near-zero agreement and one flag: `questionnaire_3_P014`, `questionnaire_4_P010`, `questionnaire_5_P018`. Excerpt QC at N = 116: ICC(1,k) V 0.965 / A 0.953; median r_wg 0.60 / 0.59; arousal EXG < MEC in Bach_Adagio_S1 (−0.52), Mendelssohn_VC_Mvt2 (−0.18), La_Vita_E_Bella (−0.09). Full numbers in §11. **Exclusions applied in the notebook (§1.1) since 2026-11-03 — first run pending.**
 
 ---
 
 ## 5. Open issues
 
+**PENDING DECISIONS (open, unchanged — for the author / supervisor):**
+- `DTW_DEV_IN_INTERP=True` vs the thesis CoE definition (condition-encoding features should be out of *both* sides of the cost of explainability; `False` gives a strictly condition-independent CoE).
+- `CREPE_UNIQUE2` hard-coded `[f0_range, vibrato_rate]` in §6.2 — read off the pre-Phase-B probe; in the Phase B probe F0 range is well represented (R² 0.43), vibrato rate is not (−0.02).
+- The "all-positive" chance floor (≈ 0.322) cited in the thesis is not computed in the notebook.
+- The §4.4d NEUTRAL_RADIUS rule triggers: under `piece`, r = 1.0 beats 0.75 on both columns for X_A and X_C (Phase B, N = 118).
+- Fig 5 (§4.7) omits the MEC points (`cc` holds only EXP/EXG) / figure dedup.
+- §4.2 / §4.7 use a fixed Ridge α = 10 while the rest of the pipeline uses nested ridge.
+
+**UNDER AUDIT (§2.6, temporary manual descriptor audit):**
+- portamento false alarms (median glide 62 ms; ≥ 12/20 MEC renditions with a glide; removing Portamento *raises* the §5.6 F1);
+- possible note splitting by wide vibrato (max half-extent 32 c, 17 close splits);
+- `timing_tempo_logsd` MEC > EXP > EXG and the tempogram's sensitivity to articulation;
+- log-attack time computed on Essentia waveform onsets (`OnsetRate`), not on note onsets;
+- DTW / duration ratio computed over the whole files incl. silence;
+- the LUFS +3 LU dual-mono offset (Essentia duplicates the mono file to 2 channels);
+- DR gate sensitivity (6 of 9 variants ρ < 0.9);
+- §2.3c flatness noise-floor test inconclusive for 60/60.
+
+**Decisions taken (2026-11-03):** excerpt QC (ICC, r_wg, bimodality coefficient, Kruskal–Wallis, crossed additive model) stays **outside** the notebook (offline scripts) · per-MERT-layer caching is **ON HOLD** · the timing pattern is explained by the author (EXG faster / more virtuosic in fast pieces, more time in slow ones → local tempo and duration ratio are piece-dependent; tempo log2-SD and pulse clarity still checked by eye in §2.6) · block weighting `'equal'` deployed for the multi-block MERT-full regression heads (tier 4E descriptive).
+
+**Other open items:**
+
 1. **"8 emotions" is mechanically 5 classes.** `QUADRANT_EMOTIONS` maps each quadrant to a *set*, so pairs (Tenderness≡Peacefulness, Power≡Joyful, Sadness≡Nostalgia) are byte-identical columns. **Decision taken: report honestly as 5 classes** (4 quadrants + Neutral). Alternative (rebuild `Y` from raw multi-label tags) remains available. Good supervisor topic.
-2. ~~**Neutral radius un-tuned.**~~ **Now measured in §4.4d** — the 0.5/0.75/1.0 sweep runs on both X_A and X_C, reports macro-F1 **with and without** Neutral, and prints class support plus how many excerpts each radius relabels. Remaining decision: read the table once it has run and keep 0.75 unless another radius wins on *both* columns.
+2. ~~**Neutral radius un-tuned.**~~ **Measured in §4.4d** — the 0.5/0.75/1.0 sweep reports macro-F1 **with and without** Neutral. In the Phase B run r = 1.0 wins on both columns (see PENDING DECISIONS).
 3. **Figure dedup still pending** (partial cleanup only): a duplicate VA scatter still sits alongside the circumplex; check for any remaining per-class-F1 heatmap/radar and ablation-figure redundancy and prune (keep circumplex, P/R/F1 bars, PCA scree).
-4. **DTW block size / DTW-dev in `df_interp`.** In the 2026-08-16 run the §2.4b gate forwarded 11 columns (8 ref-free + 3 dev) and the "outside 3–10" warning fired — trim `DTW_CANDIDATES` if that matters. Open: whether letting the DTW-deviation family into `df_interp` moves the §5.5 cost-of-explainability numbers, since those columns are 0/1 at MEC by construction (`DTW_DEV_IN_INTERP=False` gives a strictly condition-independent CoE).
-5. **Participant exclusions decided but not applied** — exclude `questionnaire_5_P012` and `questionnaire_5_P020` (§11). Wire them into §1.1 (drop from `df_long` before §1.1b, assert 116 participants / 2,320 rows) and rerun Phase B. Expected Part 1 results are in §11; `Schindlers_List_EXP` moves HA_LV → LA_LV.
+4. **DTW block size / DTW-dev in `df_interp`.** In the Phase B run the §2.4b gate forwarded 10 columns (7 ref-free + 3 dev) — inside 3–10, no warning. The `DTW_DEV_IN_INTERP` question is listed under PENDING DECISIONS.
+5. ~~**Participant exclusions decided but not applied.**~~ **Applied in §1.1 (2026-11-03)**: `EXCLUDED_PARTICIPANTS` dropped before §1.1b, asserts 116 participants / 2,320 rows / 60 excerpts; first run pending. Expected Part 1 results are in §11; `Schindlers_List_EXP` moves HA_LV → LA_LV.
 6. **Statistics hygiene:** the ablation study (§4.4b) carries bootstrap CIs, paired permutation tests and **BH-FDR within each tier × protocol** (now over F1, r and R²); **§5.1 now applies BH-FDR over all its tests** (Phase A); §5.1b (dose-response) still wants the same treatment or a pre-registered hypothesis set — not yet approved. Keep phrasing classifier-set comparisons as "across the classifiers tried," not population inference. **The lattice must stay descriptive** — selecting the winning subset on the same CV and then reporting its score is exactly the nested-selection error.
-7. **Feature hygiene — repaired in Phase B (pending the run).** The Phase A descriptors were broken: `crepe_portamento_count` was a raw count; `crepe_vibrato_rate_hz` was bandpass-bounded to [4,8] Hz *and argmax-ed inside that same band* (it could never report "no vibrato"); vibrato/portamento ran on concatenated voiced frames. **Pre-Phase-B vibrato nulls** (the n.s. dose-response) are therefore evidence about the descriptor only. Phase B (B8/B9) analyses time-contiguous notes, searches [3,10] Hz with a presence test, splits extent from coverage and reports portamento as rates/shares — a vibrato null from the next run is a **musical result at this N**, with the remaining caveats (CREPE 10 ms resolution, only notes ≥ 800 ms, declared median substitutions counted in §2.2). B9 detectability limit: a glide is only segmented if its trend moves > 70 cents within 50 ms (≈ 1.4 cents/ms).
+7. **Feature hygiene — repaired in Phase B (run on N = 118; vibrato extent / coverage now escalate, see §4; remaining doubts under audit in §2.6).** The Phase A descriptors were broken: `crepe_portamento_count` was a raw count; `crepe_vibrato_rate_hz` was bandpass-bounded to [4,8] Hz *and argmax-ed inside that same band* (it could never report "no vibrato"); vibrato/portamento ran on concatenated voiced frames. **Pre-Phase-B vibrato nulls** (the n.s. dose-response) are therefore evidence about the descriptor only. Phase B (B8/B9) analyses time-contiguous notes, searches [3,10] Hz with a presence test, splits extent from coverage and reports portamento as rates/shares — a vibrato null from the next run is a **musical result at this N**, with the remaining caveats (CREPE 10 ms resolution, only notes ≥ 800 ms, declared median substitutions counted in §2.2). B9 detectability limit: a glide is only segmented if its trend moves > 70 cents within 50 ms (≈ 1.4 cents/ms).
 8. ~~**LOOCV leaks piece identity.**~~ **Addressed in Phase A:** leave-one-piece-out is now the PRIMARY protocol everywhere (§4.0), LOOCV is the optimistic secondary, and §4.9 removes the piece entirely (within-piece prediction). Quote the `piece` number for any claim about unseen material.
 9. **`LA_HV` has n=5 from only 2 pieces** (La_Vita ×3, Meditation_Thais MEC+EXP): under `piece` it is learned from one piece at a time, and inner-CV tuning is skipped for it in many folds.
 10. **Recording sessions.** The session map is **not provided yet** (`SESSION_MAP_CSV`, columns `excerpt_id, session`; §2.3c prints "session map not provided" and skips until it is uploaded). Gain equality across the 3 recording sessions is **not independently verified** (the performer reports playing louder in EXG on purpose).
 11. **Phase C (deferred idea) — augmentation.** The supervisor's suggestion: augment the minority positive-valence classes (pitch shift ±1 semitone, tempo ±5%, never combined), with augmented copies used **only in training folds, and only when their source piece is itself in that training fold** (test = originals only, gate/PCA fitted on originals, scoring/permutations on the 60 originals). Caveats: it cannot add piece diversity (LA_HV comes from only 2 pieces); it perturbs studied variables (F0 mean, tempo, onset rate) while keeping labels; the copies' labels were never rated; phase-vocoder artefacts affect Essentia timbre features. **Decision:** evaluate class balancing (A5, tier `4D-balancing`) first; augmentation later as an ablation tier.
 12. **Not approved yet:** SHAP fitted in-sample (§5.2) · §5.3 embedding-distance sign · §1.4 mixed model · BH in §5.1b.
-13. **Known, not fixed (out of scope):** Fig 5 VA scatter (§4.7) never draws the MEC points (`cc` holds only EXP/EXG); README points to `docs/thesis_handoff.md`, the file is `docs/thesis.md`. §5.5's headline CoE is a best-of over two black boxes (max(MERT-PCA, MERT-full)) — conservative; the two separate gaps are in `coe_gaps.csv`.
-14. **Parameter ablations still pending:** CREPE step_ms (re-extraction), the CREPE voicing threshold and the B8/B9 descriptor constants (now cheap from `crepe_tracks_v2.npz`, not approved yet), Essentia frame sizes, the tempogram window / tempo prior, per-MERT-layer.
-15. **Runtime.** Nested selection (full 13-config grid, ~115 distinct calls after the memo) needs ≈ 3 h of serial CPU work by local measurement (≈ 40 s per serial `piece` call, ≈ 3× that for `loo`); with parallel outer folds that is an estimated **≈ 45 min extra on 4 cores, ≈ 1.5 h on 2 cores** — check §4.0's printed `os.cpu_count()` and the total run time.
+13. **Known:** §5.5's headline CoE is a best-of over two black boxes (max(MERT-PCA, MERT-full)) — conservative; the two separate gaps are in `coe_gaps.csv`. (The README now points to `docs/thesis.md`; Fig 5 is under PENDING DECISIONS.)
+14. **Parameter ablations still pending:** CREPE step_ms (re-extraction), the CREPE voicing threshold and the B8/B9 descriptor constants (now cheap from `crepe_tracks_v2.npz`, not approved yet), Essentia frame sizes, the tempogram window / tempo prior; per-MERT-layer is ON HOLD.
+15. **Runtime.** The Phase B run took ≈ 97 min on a 4-CPU T4 session (Phase A: 75.5 min). The next run adds tier 4E (14 extra regression heads × 2 protocols, classification memoised) and the §2.6 audit (≈ minutes).
 16. **Thesis-side open items (2026-10-30):** recruitment channels for the participants (TODO in Ch. 7 §7.4) · mean duration per condition from `piece_durations.csv` (TODO in §7.2.3) · intended quadrant of SQ8_exrpt1 (Q3 but tagged Tension/Power) and SQ8_exrpt3 (Q4 but tagged Tenderness) in the dataset metadata — check before trusting the "Intended" column of Table 7.1 · movement/passage of each work in Table 7.1 · the 6 under-18 participants (shown as "Under 18" in Table 7.5 — ask the supervisor whether consent needs a mention) · author name, committee, NTUA logo, dedication, spelling of Λυμπεράτος/Κανταρέλης, year of `lyberatos2026witheflow` (arXiv 2506 = 2025).
 
 ---
@@ -200,7 +257,9 @@ Methods subsections drafted: study design & graded manipulation · stimuli/corpu
 ## 7. Key conventions / variables (current)
 
 - **Scale 0–6**, `VA_MID=3.0`, `NEUTRAL_RADIUS=0.75`, `MERT_LAYERS=[5,6,7]`.
-- `df_long` — long-format per-rating (parse, §1.1); gains `valence_norm/arousal_norm` in §1.1b.
+- `df_long` — long-format per-rating (parse, §1.1), **screened** (`EXCLUDED_PARTICIPANTS` dropped in §1.1, `N_PARTICIPANTS_RAW` = 118); gains `valence_norm/arousal_norm` in §1.1b.
+- **Block weighting (§0.3 / §4.0 / §4.4b):** `REG_BLOCK_WEIGHTING = 'equal'` · `block_weights(sizes)` · `BlockScaler(sizes)` · `block_sizes=` in `nested_ridge_predict` / `select_ridge_alpha` / `NestedRidgeOperator` / `_ridge_pipe` · `_abl_reg_kw(names, weighting=None)` · `ablate(reg_block_sizes=…, block_weighting=…)` · `abl_vs_ref(…, pcols=…)` · `abl_alpha_edge_report` · `df_abl_bw` (tier 4E); ablation rows carry `block_weighting`, `n_alpha_edge_val/aro`, `n_outer_folds`.
+- **§2.6 audit (temporary):** `RUN_MANUAL_AUDIT`, `AUDIT_EXCERPTS`, everything else `_aud_*`; outputs only in `OUTPUT_DIR/manual_audit/`.
 - `df_agg` / `df_all` — per-excerpt aggregated. **`valence_mean/arousal_mean` are now the NORMALIZED means** (ground truth); `valence_mean_raw/arousal_mean_raw` kept in parallel.
 - `emotion_labels` — VA-quadrant-derived (from normalized means); **this becomes `Y`**. `top_tags` — raw tags, descriptive only (§1.5).
 - `Y` (60×N), `mlb.classes_` = class names; `df_expr` — modelled-excerpt frame.
@@ -220,14 +279,15 @@ Methods subsections drafted: study design & graded manipulation · stimuli/corpu
 
 ## 8. Workflow
 
-**Repo:** `makris2003/violin-emotion-thesis` (private). GitHub = source of truth; Kaggle = GPU execution. `CLAUDE.md` at repo root is auto-read by Claude Code. Loop: edit locally (VS Code) → commit/push → Kaggle pulls → run on GPU → commit results back. Claude Code **cannot run** the notebook (no audio/GPU) → surgical edits + static checks + local synthetic tests only (the §4.0 `# >>> HELPERS:cv_engine` block is self-contained for that purpose). The notebook is stored as single-line JSON, so review changes cell by cell (e.g. nbdime) rather than with a plain `git diff`. Kaggle "Pull from GitHub" can stale its OAuth token (unlink/relink to fix).
+**Repo:** `makris2003/violin-emotion-thesis` (private). GitHub = source of truth; Kaggle = GPU execution. `CLAUDE.md` at repo root is auto-read by Claude Code. Loop: edit locally (VS Code) → commit/push → Kaggle pulls → run on GPU → commit results back. Claude Code **cannot run** the notebook (no audio/GPU) → surgical edits + static checks + local synthetic tests only (the §4.0 `# >>> HELPERS:cv_engine` block is self-contained for that purpose). The notebook is stored as single-line JSON, so review changes cell by cell (e.g. nbdime) rather than with a plain `git diff`. At ≈ 6 MB it exceeds the Read tool's notebook limit, so Claude Code cannot use NotebookEdit on it: cells are edited by splitting the JSON at the `{"cell_type"` boundaries, decoding / re-encoding the changed cell sources with sed/awk under `LC_ALL=C`, clearing the outputs of changed code cells, and verifying byte for byte that every untouched cell is unchanged. Kaggle "Pull from GitHub" can stale its OAuth token (unlink/relink to fix).
 
 ---
 
 ## 9. Quick answers
 
 - **"Why is valence weak?"** Intrinsic to MER (needs harmony/context). Arousal is clean with the same features → it's a finding. To *explain* (not rescue) it, add 1–2 harmonic features (mode / tonal tension) so you can say "valence is governed by harmony, which the graded expressivity holds fixed."
-- **"Did normalization change results?"** Not materially — raw↔norm r = 0.996 (V) / 0.993 (A); 10/60 excerpts change class (mostly across the Neutral radius), 4/60 change quadrant. That's the point: it confirms the findings aren't a rater artifact (defensibility, not correction).
+- **"Why block weighting in the regression heads?"** With one ridge α on StandardScaler-ed columns, 768 MERT-full columns outweigh a ~10-column interpretable block: every MERT + X set scored like MERT alone (R²_aro 0.45–0.46, N = 118) while Essentia + DTW alone reached 0.67. Scaling block *b* by √(P/(B·p_b)) gives each tool an equal a-priori share of the penalty (group ridge), keeps the total variance P, and uses only column counts — so it cannot leak. Tier 4E reports weighted vs unweighted.
+- **"Did normalization change results?"** Not materially — raw↔norm r = 0.996 (V) / 0.993 (A) at N = 118 (0.997 / 0.993 at N = 116); 10/60 excerpts change class at N = 118, 8/60 at N = 116 (mostly across the Neutral radius), 4/60 change quadrant at N = 118. That's the point: it confirms the findings aren't a rater artifact (defensibility, not correction).
 - **"Why remove MFCC?"** Degenerate (F1≈0), indistinct from the Dummy floor, out-of-topic. Dummy floors are the official baseline.
 - **"Is it a leaderboard (MERT vs CREPE)?"** No — that framing is de-emphasised. It's a categorisation + interpretable-attribution study; cost of explainability is the comparison, not "who wins."
 - **"Why forward features up front unsupervised?"** To keep the CV leakage-free — a supervised selection would leak held-out folds. The gate never sees `Y`.
@@ -240,9 +300,9 @@ Methods subsections drafted: study design & graded manipulation · stimuli/corpu
 
 A full audit of the 2026-08-16 run's outputs produced three phases of corrections.
 
-- **Phase A — pipeline corrections (APPLIED and run on 2026-10-09; results in §4; the A3 MERT issue turned out to be a false alarm).** A-shared §4.0 CV engine · **A1** DummyClassifier floors were re-created with one seed in every fold, so `stratified`/`uniform` predicted the same constant everywhere (F1-macro = 0); now seeded per fold × label, 200 repeats, mean/SD/P95 · **A2** leave-one-piece-out PRIMARY everywhere, nested piece-grouped ridge instead of RidgeCV, §5.5 handles a negative CoE, new §4.9 within-piece prediction · **A3** MERT's positional-convolution weight-norm tensors were never loaded (checkpoint `weight_g/_v` vs model `parametrizations.weight.original0/1`) — the conv ran with random weights; now restored + asserted, cache `emb_mert_v2.npz`; **every MERT-based number from before is superseded** · **A4** GaussianNB as the single pre-declared default; every best-of selection removed (§4.5 headline, §4.6 best overall, §4.8, §7.1) · **A5** class balancing + per-label inner-CV C for SVM/LogReg, balanced RF/ET, XGBoost `scale_pos_weight`; tier `4D-balancing` · **A6** out-of-sample R² and RMSE next to every r, R² permutation p in the ablation BH family · **A7** MERT probe with GroupKFold(5) over pieces and nested α (grid to 1e4) · **A14** BH-FDR over all 174 §5.1 tests, stars from q · **A-QC** §2.3c recording-level sanity check (report only).
+- **Phase A — pipeline corrections (APPLIED and run on 2026-10-09; results in §4; the A3 MERT issue turned out to be a false alarm).** A-shared §4.0 CV engine · **A1** DummyClassifier floors were re-created with one seed in every fold, so `stratified`/`uniform` predicted the same constant everywhere (F1-macro = 0); now seeded per fold × label, 200 repeats, mean/SD/P95 · **A2** leave-one-piece-out PRIMARY everywhere, nested piece-grouped ridge instead of RidgeCV, §5.5 handles a negative CoE, new §4.9 within-piece prediction · **A3** MERT's positional-convolution weight-norm tensors were never loaded (checkpoint `weight_g/_v` vs model `parametrizations.weight.original0/1`) — the conv ran with random weights; now restored + asserted, cache `emb_mert_v2.npz`; **every MERT-based number from before is superseded** · **A4** GaussianNB as the single pre-declared default; every best-of selection removed (§4.5 headline, §4.6 best overall, §4.8, §7.1) · **A5** class balancing + per-label inner-CV C for SVM/LogReg, balanced RF/ET, XGBoost `scale_pos_weight`; tier `4D-balancing` · **A6** out-of-sample R² and RMSE next to every r, R² permutation p in the ablation BH family · **A7** MERT probe with GroupKFold(5) over pieces and nested α (grid to 1e4) · **A14** BH-FDR over all §5.1 tests (174 in Phase A with 29 interpretable features; 180 since Phase B), stars from q · **A-QC** §2.3c recording-level sanity check (report only).
 - **Key fact behind A2:** 95% of valence variance and 91% of arousal variance across the 60 excerpts is between-piece; the condition explains 1% (V) / 4% (A).
-- **Phase B — descriptor repairs + analysis upgrades (APPLIED 2026-10-10; results pending the next Kaggle run).** Analysis upgrades: **B-NMS** nested model selection replaces the single default classifier · **B-INC** Freedman–Lane incremental test in §4.9 (ΔR² = R²(Condition + Features) − R²(Condition-only); reduced model = OLS on the centred condition one-hot; residuals permuted within piece; closed-form refits; BH over the 8 tests; columns `r2_cond_plus`, `d_r2_incremental`, `p_incremental`, `q_incremental`) · **B-NC** split-half noise ceiling (200 random rater halves, centred within piece, Spearman–Brown; uncentred for context; `r2_over_ceiling`) · **B-MERTFULL** regression heads on MERT-full (`ablate(X_reg=…)`, regression rebuild assert, §4.2 `Ridge-nested · MERT-full` row; `4A-mert-pca` unchanged). Descriptor repairs: **B-shared** CREPE tracks cached, `fix_octave_errors`, `segment_notes` (never across unvoiced gaps) · **B8** vibrato · **B9** portamento (+ `4A-crepe-portamento` removed) · **B10** F0 range P95 − P5 on the corrected track · **B11** L1-normalised flux · **B12** dynamic-range silence gate + 3 × 3 sweep · **B13** `timing_*` family (note onsets from CREPE, 151-frame tempogram × log-normal prior, `timing_tempo_logsd`), `dtw_global_tempo_ratio` → `dtw_duration_ratio` · **B-NF** spectral-flatness noise floor + FLAT_MIN sensitivity + optional session map · **B-cache** `_v2` names + assert.
+- **Phase B — descriptor repairs + analysis upgrades (APPLIED 2026-10-10; RUN on N = 118 — results in §4).** Analysis upgrades: **B-NMS** nested model selection replaces the single default classifier · **B-INC** Freedman–Lane incremental test in §4.9 (ΔR² = R²(Condition + Features) − R²(Condition-only); reduced model = OLS on the centred condition one-hot; residuals permuted within piece; closed-form refits; BH over the 8 tests; columns `r2_cond_plus`, `d_r2_incremental`, `p_incremental`, `q_incremental`) · **B-NC** split-half noise ceiling (200 random rater halves, centred within piece, Spearman–Brown; uncentred for context; `r2_over_ceiling`) · **B-MERTFULL** regression heads on MERT-full (`ablate(X_reg=…)`, regression rebuild assert, §4.2 `Ridge-nested · MERT-full` row; `4A-mert-pca` unchanged). Descriptor repairs: **B-shared** CREPE tracks cached, `fix_octave_errors`, `segment_notes` (never across unvoiced gaps) · **B8** vibrato · **B9** portamento (+ `4A-crepe-portamento` removed) · **B10** F0 range P95 − P5 on the corrected track · **B11** L1-normalised flux · **B12** dynamic-range silence gate + 3 × 3 sweep · **B13** `timing_*` family (note onsets from CREPE, 151-frame tempogram × log-normal prior, `timing_tempo_logsd`), `dtw_global_tempo_ratio` → `dtw_duration_ratio` · **B-NF** spectral-flatness noise floor + FLAT_MIN sensitivity + optional session map · **B-cache** `_v2` names + assert.
 - **Phase C (deferred idea):** augmentation (see §5 item 11).
 
 ### Phase B — old → new feature names
@@ -268,19 +328,31 @@ A full audit of the 2026-08-16 run's outputs produced three phases of correction
 
 Variable names (`DTW_REFFREE`, `df_dtw`, `DTW_*`) and the lattice block name `DTW` were kept. Deviations from the literal Phase B spec (stated in the cells): vibrato notes ≥ 800 ms instead of 400 (presence resolution at fs = 100 Hz); tempogram statistics over interior frames only (edge frames ramp to zero and fake tempo variability); the raw diagnostic flux is computed on the gated frames as well; `feat_crepe_v2.csv` is recomputed from the cached tracks every run; the timing features raise if an excerpt has < 3 notes; §6.2 takes its lattice-equivalent blocks from the §4.4b stacks (identical arrays, so the §6.2b equality guard is not exposed to float32 rounding flipping a discrete inner-fold choice).
 
-### What to check after the Phase B Kaggle run
+### Phase B Kaggle run (N = 118, 2026-10-09/10) — checklist outcome
 
-- [ ] §2.2 octave corrections per excerpt; vibrato rate has **> 20 distinct values**; coverage / half-extent ranges plausible (half-extent typically ~10–40 cents); **declared vibrato substitution count** (no note ≥ 800 ms: ___ / 60 — ⚠️ fires above 10; no vibrato note: ___) and the 600/800/1000 ms sensitivity; F0 range max (expected well below the old 5343 c); segmentation diagnostic.
-- [ ] §2.2 portamento extents within 80–2000 c and glides not on every transition.
-- [ ] §2.3 r(flux, LUFS) raw vs normalised; DR max and % gated; DR sensitivity ρ.
-- [ ] §2.3c flatness distribution, flatness-floor flags and their sensitivity; session map still "not provided".
-- [ ] §3.3b timing manipulation check on the new `timing_*` features.
-- [ ] §4.0 `os.cpu_count()`, parallel == serial guard; nested-selection config frequencies per call.
-- [ ] Does NestedSelect beat the strict chance P95 under `piece` (§4.1 / §4.5b / §7.1)?
-- [ ] MERT-full in the lattice regression heads (`n_features_reg`), regression rebuild assert.
-- [ ] §4.9 B-INC incremental p / q for Δarousal and Δvalence; noise ceilings and R² / ceiling.
-- [ ] §5.1b dose-response for the repaired vibrato / timing features; §5.6 vibrato family; §6.1b probe for the new CREPE descriptors (re-check the `CREPE_UNIQUE2` pair in §6.2).
-- [ ] Total runtime (Phase A: 75.5 min; nested selection adds an estimated ≈ 45 min on 4 cores / ≈ 1.5 h on 2 cores).
+- [x] §2.2 octave corrections 3 frames / 3 excerpts; vibrato rate 37 distinct values (> 20); half-extent 0–32.1 c, coverage 0–1; substitutions: no note ≥ 800 ms 1/60 (no ⚠️), no vibrato note 23; notes 391 / 259 / 198 at 600 / 800 / 1000 ms; F0 range max 3100 c (old 5343 c); 17 close splits.
+- [x] §2.2 portamento extents 80–1907 c; glides on 24.3 % of transitions (median 62 ms) → under audit.
+- [x] §2.3 r(flux, LUFS) 0.874 raw → 0.508 normalised; DR max 34.7 dB, median 6.2 % gated (max 26 %); DR sensitivity ρ down to 0.79 → under audit.
+- [x] §2.3c 0/60 conclusive at FLAT_MIN 0.2 (9 at 0.1), 0 flags, session map not provided → under audit.
+- [x] §3.3b timing manipulation check: 0/3 variability features non-decreasing; tempo log2-SD falls MEC → EXG → author's explanation + under audit.
+- [x] §4.0 4 CPUs, parallel == serial ✅.
+- [x] NestedSelect beats the strict P95 under `piece` only on X_B (0.361); X_C 0.302 does not.
+- [x] MERT-full in the lattice regression heads (`n_features_reg` 768–795), rebuild ✅ — and every MERT + X head scored like MERT alone (→ block weighting).
+- [x] §4.9 B-INC: Δvalence incremental q 0.037 (Interpretable, MERT-full, Interp + MERT-PCA); Δarousal q 0.070; ceilings V 0.455, A 0.678.
+- [x] §5.1b vibrato extent / coverage escalate (z +5.14 / +4.90); §5.6 vibrato alone weak; §6.1b vibrato coverage R² 0.48, rate −0.02 (`CREPE_UNIQUE2` → pending decision).
+- [x] Runtime ≈ 97 min.
+
+### What to check after the next run (N = 116 + block weighting + §2.6 audit)
+
+Interactive run up to §2.6 first:
+- [ ] §1.1 prints 2 excluded (`questionnaire_5_P012`, `questionnaire_5_P020`), 118 → 116 participants, 2360 → 2320 rows, per form 20 / 21 / 26 / 19 / 30; the three asserts pass.
+- [ ] §1.1b maps ≈ V 2.94 + 1.57z, A 3.39 + 1.53z; §1.2b anchors V 0.342 → 0.338, A 0.276 → 0.253; 8/60 class changes; §1.2 classes HA_LV 20, LA_LV 17, HA_HV 11, Neutral 7, LA_HV 5 (`Schindlers_List_EXP` HA_LV → LA_LV); §1.4 prints the exclusions.
+- [ ] §2.6: every recompute / loop-reproduction assert passes; declared substitutions listed; LUFS diff − 3 dB ≈ 0; listen to the players (onset clicks, beat clicks, glide tone); read the overview / zoom figures, the per-piece ✓/✗ tables and the 20-piece exceptions; fill `manual_audit/audit_checklist.csv`.
+Full run:
+- [ ] §4.0 class prevalences 11 / 20 / 5 / 17 / 7 + analytic uniform F1; block-weighting guard ✅; printed weights (MERT-full ≈ 0.51, CREPE / Essentia ≈ 4.46, DTW ≈ 5.33).
+- [ ] §4.4b `[w]` on the 7 MERT-full multi-block rows; MERT + X R²_aro no longer equal to MERT alone?; α grid-edge report.
+- [ ] §4.4c tier 4E: Δ weighted − unweighted (r, R², q) per set and protocol; deployed == lattice ✅; α edge hits.
+- [ ] §4.4d radius rule; all other guards; NestedSelect vs strict P95; §4.9 B-INC; §5.5 CoE; §5.6; §6.1b; total runtime.
 
 ### Phase A Kaggle run (2026-10-09) — checklist outcome
 
@@ -292,7 +364,7 @@ Variable names (`DTW_REFFREE`, `df_dtw`, `DTW_*`) and the lattice block name `DT
 - [x] Tier 4D: balanced SVM + inner-CV C beats NB under `piece` on all three matrices.
 - [x] §4.9: Interpretable beats Condition-only descriptively for both targets (untested → B-INC).
 - [x] §5.5: CoE negative under `piece` (interpretable wins).
-- [x] §6.1b: α hit the grid edge in 32 folds.
+- [x] §6.1b: α hit the grid edge (count superseded: 34 outer folds in the Phase B run).
 - [x] Runtime: 45.3 → 75.5 min (+30 min), dominated by §4.1 inner-CV tuning and the 4D tier.
 
 ---
