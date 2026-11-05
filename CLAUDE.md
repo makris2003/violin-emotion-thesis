@@ -4,13 +4,22 @@
 > 2026-10-09 23:45 → 2026-10-10 01:22 UTC, ≈ 97 min, 101 cells, 0 errors; outputs saved in the
 > committed notebook). Its results (below) are **N = 118 / pre-block-weighting**.
 >
-> **Next Kaggle run = Phase B on N = 116 + block weighting + the §2.6 audit.** Applied in the
-> notebook (now **104 cells**), not yet run: (1) the participant exclusions in §1.1
-> (`EXCLUDED_PARTICIPANTS`, N = 118 → 116); (2) equal-share block weighting of the multi-block
-> MERT-full regression heads (`REG_BLOCK_WEIGHTING = 'equal'`, tier `4E-block-weighting`); (3) the
-> **temporary §2.6 manual descriptor audit**. The author first runs **interactively up to §2.6**,
-> inspects the audit, then launches the full run. The thesis text (Ch. 7 Dataset) already reports
-> N = 116 numbers; details in `docs/thesis.md` §11–§12.
+> **Committed notebook = an N = 116 run of 2026-11-03** (papermill 15:26 → 17:11 UTC; §1.1 shows
+> 118 → 116, F5 32 → 30) with (1) the participant exclusions in §1.1 (`EXCLUDED_PARTICIPANTS`),
+> (2) equal-share block weighting of the multi-block MERT-full regression heads
+> (`REG_BLOCK_WEIGHTING = 'equal'`, tier `4E-block-weighting`) and (3) the **temporary §2.6 manual
+> descriptor audit**. Its §2.6 outputs are the evidence of the **manual audit of 2026-11-05**; its
+> Part 2–7 numbers are **not recorded here** and are superseded by Phase B2 (they still use the
+> Phase B CREPE descriptors).
+>
+> **Phase B2 — descriptor repairs after the manual audit — APPLIED 2026-11-05, NOT RUN** (see the
+> section below): plateau note segmentation + re-articulation splits, Viterbi-aware portamento,
+> windowed sinusoid-fit vibrato, caches `feat_crepe_v3.csv` / `dtw_features_v3.csv` / `rms10_v3.npz`.
+> Changed cells (outputs cleared): §0.3, §2.2 (md + code), §2.4 (md + code), §2.5, §2.6 (md + both
+> code cells), §4.4c (one print), §5.6 (md + caveat print), output reference. **Next: run
+> interactively up to §2.6, read the calibration grids and the AUTHOR VALIDATION table, then the
+> full run.** The thesis text (Ch. 7 Dataset) already reports N = 116 numbers; details in
+> `docs/thesis.md` §11–§12.
 
 ## Project
 Undergraduate **diploma thesis**, School of Electrical and Computer Engineering, NTUA (supervisor
@@ -43,8 +52,10 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   (§1.4 prints the 2 exclusions) → lift.
 - **Part 2 — features:** MERT (768-dim, layers 5–7; §2.1 restores the positional-conv weight-norm
   tensors and asserts them, cache `emb_mert_v2.npz`) · CREPE (§2.2: tracks cached once
-  `crepe_tracks_v2.npz`, octave correction, note segmentation, vibrato / portamento / F0
-  descriptors; helpers in the `# >>> HELPERS:descriptors … # <<<` block) · Essentia
+  `crepe_tracks_v2.npz` + a 10 ms RMS envelope `rms10_v3.npz`, octave correction, **B2** plateau
+  note segmentation with re-articulation splits, sinusoid-fit vibrato / Viterbi-aware portamento /
+  F0 descriptors, MEC negative-control calibration prints; helpers in the
+  `# >>> HELPERS:descriptors … # <<<` block) · Essentia
   (dynamics/timbre/tonal; L1-normalised flux, silence-gated dynamic range) · §2.3c recording-level
   sanity check (report only) · timing + DTW (§2.4/§2.4b: `timing_*` reference-free family, `dtw_*`
   deviation family vs MEC). Each extracted in full, then forwarded through one shared
@@ -121,8 +132,12 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
 - `Y` (60×5), `mlb.classes_`. Full blocks: `df_mert`, `df_crepe`, `df_essentia`, `df_dtw`.
   Forwarded: `emb_mert_fwd`, `df_crepe_fwd`, `df_ess_fwd`, `df_dtw_fwd`; lists `*_FORWARD`.
 - CREPE: `CREPE_CANDIDATES` (10), `CREPE_LABELS`, `CREPE_DIAGNOSTIC = ['crepe_vibrato_n_notes']`;
-  `CREPE_TRACKS`, `CREPE_DIAG`, `CREPE_CENTS`, `CREPE_VOICED`; `VIB_N_SUBST_NONOTES` /
+  `CREPE_TRACKS`, `CREPE_DIAG`, `CREPE_CENTS`, `CREPE_VOICED`, **`CREPE_ENV_DB`** (10 ms RMS dB on
+  the CREPE grid, B2), `CREPE_VITERBI_SOURCE_OK` (report only); `VIB_N_SUBST_NONOTES` /
   `VIB_N_SUBST_NOVIB`; `_med_rate` (the declared median vibrato-rate substitute, read by §2.6).
+  `CREPE_DIAG[e]` keys (B2): `n_octave_fixed, n_vib_notes, n_windows, n_vib_windows, n_notes_60,
+  n_notes_60_v2, n_reart_splits, n_close_splits, n_transitions, n_glides, glide_durs, glide_exts,
+  glide_excess, transitions, vib_windows, notes_by_min` (the Phase B key `n_vib` is gone).
 - Diagnostic-only columns: `CREPE_DIAGNOSTIC`, `ESSENTIA_DIAGNOSTIC =
   ['essentia_spectral_flux_raw_mean']`, `TIMING_DIAGNOSTIC = ['timing_octave_jump_frac']`.
 - Assembly: `X_A` (MERT-fwd), `X_B` (CREPE-fwd), `X_C` (all), `X_D` (MERT+Essentia), `X_F`
@@ -161,35 +176,140 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   `nested_ridge_predict` · §6.2b additive == lattice · §5.5 interpretable r equals §5.4 · §2.5 no
   pre-Phase-B cache name · **§2.6 audit recompute asserts** (temporary).
 - **NOT run:** CREPE step_ms, Essentia frame sizes, per-MERT-layer (**ON HOLD** — decision
-  2026-11-03), CREPE voicing threshold / B8/B9 constants (cheap from `crepe_tracks_v2.npz`, not
-  approved), tempogram window / tempo prior.
+  2026-11-03), CREPE voicing threshold / the B2 descriptor constants as an ablation tier (cheap from
+  `crepe_tracks_v2.npz` + `rms10_v3.npz`; §2.2 prints report-only sensitivities and the MEC
+  calibration grids instead), tempogram window / tempo prior.
 
-## §2.6 — TEMPORARY manual descriptor audit (new, 2026-11-03)
-One markdown cell + two code cells between `# >>> AUDIT` / `# <<< AUDIT` markers (cell ids
-`audit26md`, `audit26a`, `audit26b`), right after §2.5. `RUN_MANUAL_AUDIT = True`,
-`AUDIT_EXCERPTS = Meditation_Thais_{MEC,EXP,EXG} + Mozart_VC4_{MEC,EXP,EXG}`; every other name is
-`_aud_*`; nothing downstream reads it; writes only to `OUTPUT_DIR/manual_audit/`; installs
-pyloudnorm (AUDIT only). It recomputes all 30 interpretable features with the pipeline's own
-functions and asserts equality with `df_crepe/df_essentia/df_dtw` (CREPE/DTW 1e-6, Essentia 1e-5;
-declared §2.2 substitutions recognised); asserts that its per-note vibrato, per-transition
-portamento, per-frame tempo and Essentia frame loops reproduce the helpers; produces audio players
-(+ onset clicks, + beat clicks from the integrated per-frame tempo, + glide tone), a 6-panel
-overview per excerpt, note / transition zooms, notes / transitions / key / LUFS tables, per-piece
-direction tables vs the performance instructions (✓/✗), the same direction check over all 20 pieces,
-and `manual_audit/audit_checklist.csv` (one row pre-filled: SQ8 exrpt1 MEC/EXP/EXG + exrpt3 EXP/EXG
-— author confirmed no vibrato → ✅ if this run again finds 0 vibrato notes). **Remove after the audit.**
+## §2.6 — TEMPORARY manual descriptor audit (2026-11-03; updated for B2 on 2026-11-05)
+One markdown cell + two code cells between `# >>> AUDIT` / `# <<< AUDIT` markers (cells 39–41; the
+Kaggle run regenerated the ids: `617ff63d`, `c214f0e2`, `704bc12e`), right after §2.5.
+`RUN_MANUAL_AUDIT = True`, `AUDIT_EXCERPTS = Meditation_Thais_{MEC,EXP,EXG} + Mozart_VC4_{MEC,EXP,EXG}`;
+every other name is `_aud_*`; nothing downstream reads it; writes only to `OUTPUT_DIR/manual_audit/`;
+installs pyloudnorm (AUDIT only). It recomputes all 30 interpretable features with the pipeline's own
+B2 helpers (+ `CREPE_ENV_DB`) and asserts equality with `df_crepe/df_essentia/df_dtw` (CREPE/DTW 1e-6,
+Essentia 1e-5; declared §2.2 substitutions recognised); asserts that the vibrato windows reproduce
+coverage / rate / extent, every window's `vibrato_window_fit` reproduces its R², the transition table
+reproduces glide / transition counts and the portamento rate, and the per-frame tempo and Essentia
+frame loops reproduce the helpers. Produces audio players (+ onset clicks, + beat clicks, + glide
+tone), a 6-panel overview per excerpt (panel 2: notes, trend, shaded vibrato windows, magenta
+re-articulation splits, reason codes incl. V = viterbi-limited jump; panel 3: + the 10 ms `env_db`
+and the splits), zooms (the 3 longest analysed notes with every 500 ms window and its fitted
+sinusoid + legacy FFT verdict; every glide / rejected transition with rise, t_min, excess), tables
+(notes with segmentation source / windows / vibrato fraction / median R² / legacy FFT columns;
+`*_vibrato_windows.csv`; transitions with t_min / excess / B2 verdict; key / LUFS), per-piece
+direction tables (✓/✗), the 20-piece direction check, `audit_checklist.csv` (SQ8 row now counts
+vibrato **windows**) and the **AUTHOR VALIDATION** table V1–V6 (`audit_author_validation.csv`,
+PASS / FAIL printed, never raised) + the Méditation EXP F♯5→A5 / A4→B4 old vs new verdicts.
+**Remove after the audit.**
 
-## What to check after the next run (N = 116 + block weighting + §2.6)
-First, interactive run up to §2.6:
+## Phase B2 — descriptor repairs after the manual audit (2026-11-05; APPLIED, NOT RUN)
+**Audit findings (from the §2.6 outputs of the 2026-11-03 N = 116 run, checked by eye and ear):**
+- **(a) Portamento false alarms = crepe's Viterbi ramp.** Méditation MEC D6→D5 (6.57 s, −1177 c) and
+  A5→A4 (9.36 s, −1198 c) were "glides" (rise 62.5 ms, sign 1.0) — but crepe's Viterbi decoder
+  (`crepe/core.py`, `to_viterbi_cents`, transition weight max(12 − |Δbin|, 0) over 20-cent bins)
+  moves at most 11 bins = 220 c per 10 ms frame, so every octave jump becomes a ≈ 55 ms ramp. The
+  real EXG glides are 175–312 ms (B5→C♯6 312.5, C♯6→D6 175, E5→A5 200).
+- **(b) The 70 c boundary rule merges a note with its slide.** Méditation EXP "D6" 6.38–8.30 s
+  (1920 ms, dev −12.5 c, FFT presence 0.08) is really C♯6 + slide + D6; EXG C♯6 5.61–6.64 s
+  contains slides.
+- **(c) The FFT presence test rejects real vibrato.** Méditation EXP D5 8.40–10.00 s (presence 0.533,
+  5.58 Hz, ±4.15 c) and B4 12.73–16.12 s (presence 0.841, 5.63 Hz, ±4.40 c) were rejected only by the
+  5 c half-extent rule; the parabolic peak stepped outside the band (rates 1.53 / 2.55 / 2.38 Hz on
+  MEC negatives). The author confirmed no vibrato in SQ8 exrpt1 (MEC/EXP/EXG) and exrpt3 (EXP/EXG).
+- **(d) Repeated notes are not separated.** Mozart VC4 has 19 notes in the score; the pipeline
+  found 17 (MEC) / 16 (EXP) / 19 (EXG); repeated D6s merged (MEC 1.39–3.09 s, EXP 1.38–3.43 s,
+  EXG 1.70–3.04 s) — a re-articulation without a pitch change has no trend boundary.
+- **(e) Still open (documented, NOT changed in B2):** integrated LUFS Essentia − pyloudnorm =
+  **+3.055 LU on all 6** audited excerpts (the dual-mono duplication; a constant offset, harmless for
+  correlations but not an absolute LUFS) · `es.Key` gives **G minor for Mozart_VC4_EXP** (D major for
+  the other five) · Méditation tempo log2-SD **MEC 0.256 > EXP 0.158 > EXG 0.135** and pulse clarity
+  lowest at MEC (✗ vs the metronomic instruction — the tempogram reacts to articulation) · Mozart
+  log-attack time **not sharper in the spiccato EXP** (✗; LAT on Essentia waveform onsets).
+
+**New definitions (HELPERS:descriptors, §2.2):**
+- **Segmentation** `segment_notes(cents, voiced, min_note_ms, step_ms=10, env_db=None,
+  reart_dip_db=REART_DIP_DB)` (same return contract; `segment_notes_detail` adds `kinds` /
+  `splits`): per voiced run, greedy **plateaus** of the 15-frame median trend (|trend − running
+  median| ≤ `PLATEAU_TOL_CENTS=40`, range ≤ `PLATEAU_MAX_RANGE_CENTS=80` — added guard so a slow ramp
+  cannot pass as a plateau), candidates ≥ 60 ms; adjacent plateaus < `PLATEAU_MERGE_CENTS=50` and
+  ≤ `PLATEAU_MERGE_GAP_MS=50` apart merged; **re-articulation** split at a local minimum t of
+  `env_db` with max(env[t−150 ms : t]) − env[t] ≥ `REART_DIP_DB=6` and max(env[t : t+60 ms]) − env[t]
+  ≥ 6 dB (`REART_PRE_MS=150`, `REART_POST_MS=60`; candidates accepted deepest first, parts ≥ 60 ms);
+  drop < min_note_ms. `env_db_on_grid(y, sr, n_frames)`: rectangular 25 ms window (`ENV_WIN_MS`)
+  centred on the CREPE frame times i·10 ms, 16 kHz mono (the CREPE input), zeros outside, floor
+  −120 dB → `rms10_v3.npz`. The Phase B rule stays as `_segment_notes_v2` (report only).
+  Re-articulation splits are note onsets for the timing family.
+- **Portamento (B9b)** `portamento_features(..., env_db=None)`: transitions between consecutive notes
+  of one run; t_min = 0.8·|I| / `CREPE_VITERBI_MAX_CENTS_PER_FRAME` (220) · 10 ms ·
+  `GLIDE_RISE_SCALE` (1.25); excess = rise − t_min; glide iff rise ∈ `GLIDE_DUR_MS=(80, 500)`, excess
+  ≥ `GLIDE_MIN_EXCESS_MS=50`, |I| ∈ 80–2000 c, sign ≥ 0.80. Verdicts (order): across an unvoiced gap ·
+  interval out of range · no 90 % crossing · too short · viterbi-limited jump · too slow · not
+  monotone · glide. Same output keys + per-glide `excess` + `transitions` (with `t_min_ms`,
+  `excess_ms`, `passes_except_excess`). §2.2 checks `inspect.getsource(crepe.core.to_viterbi_cents)`
+  for `"12 - abs"` (prints, never raises).
+- **Vibrato (B8b)** `vibrato_features(cents, voiced, min_note_ms=VIB_MIN_NOTE_MS, env_db=None)`:
+  notes ≥ `VIB_MIN_NOTE_MS=500` (sensitivity 500/650/800), `VIB_WIN_MS=500` windows every
+  `VIB_HOP_MS=250` (last window shifted to the note end), degree-2 detrend, LS a·sin + b·cos over
+  `VIB_RATE_BAND=(4, 8)` Hz step 0.05, R², argmax + parabolic refinement clamped to the grid,
+  half-extent √(a² + b²) (`vibrato_window_fit`); vibrato window iff R² ≥ `VIB_FIT_R2_MIN=0.50` and
+  half-extent ≥ `VIB_MIN_EXTENT=3.0`; coverage = union of vibrato-window time / analysed-note time;
+  rate / extent = duration-weighted medians over vibrato windows; same declared substitutions and ⚠️.
+  Column names unchanged. `vibrato_note` = legacy FFT detector (report only; constants
+  `VIB_BAND`, `VIB_PRESENCE_MIN`, `VIB_LEGACY_MIN_EXTENT=5`).
+- **Calibration (report only, label-free):** MEC = negative control (no vibrato, no portamento by
+  instruction). §2.2 prints the % of MEC windows passing R² ∈ {0.3, 0.4, 0.5, 0.6, 0.7} × half-extent
+  ∈ {2, 3, 4, 5} c and the % of MEC transitions that would be glides at `GLIDE_MIN_EXCESS_MS` ∈
+  {25, 50, 75, 100}; ⚠️ if the deployed setting exceeds 5 %. Audio-derived only — never a rating,
+  never `Y`; nothing is chosen automatically (the constants stay as declared).
+- **Caches:** `feat_crepe_v2.csv` → `feat_crepe_v3.csv`, `dtw_features_v2.csv` → `dtw_features_v3.csv`
+  (the onsets changed), new `rms10_v3.npz`; both v2 names added to `OLD_CACHE_NAMES` (§0.3) and
+  asserted in §2.5. `crepe_tracks_v2.npz` unchanged (CREPE itself is not re-run).
+- Call sites: `crepe_descriptors(f0_hz, voiced, env_db=None)`, `note_onset_times(...,
+  env_db=None)`, `timing_note_features(..., env_db=None)`, `extract_timing_reffree(y, sr, cents,
+  voiced, env_db)` (§2.4, env_db required), `n_close_splits(notes, meds, kinds=None)`.
+
+| Phase B | Phase B2 |
+|---|---|
+| boundary where the trend moves > 70 c over 5 frames | trend plateaus (±40 c, range ≤ 80 c) + merge < 50 c / ≤ 50 ms + re-articulation dips ≥ 6 dB (`_segment_notes_v2` kept, report only) |
+| glide 40–400 ms rise, sign ≥ 0.8 | 80–500 ms rise, excess over the Viterbi ramp ≥ 50 ms, sign ≥ 0.8 |
+| vibrato notes ≥ 800 ms, FFT peak in [3,10] Hz, presence ≥ 0.30, half-extent ≥ 5 c (Hilbert) | notes ≥ 500 ms, 500 ms windows / 250 ms hop, LS sinusoid 4–8 Hz, R² ≥ 0.50, half-extent ≥ 3 c (√(a²+b²)) |
+| coverage = vibrato-note duration / notes ≥ 800 ms | union of vibrato-window time / analysed-note time |
+| rate / extent = duration-weighted medians over vibrato notes | … over vibrato windows (rate clamped to 4–8 Hz) |
+| `CREPE_DIAG` `n_vib` | `n_vib_notes`, `n_windows`, `n_vib_windows`, `n_notes_60_v2`, `n_reart_splits`, `glide_excess`, `transitions`, `vib_windows` |
+| `feat_crepe_v2.csv`, `dtw_features_v2.csv` | `feat_crepe_v3.csv`, `dtw_features_v3.csv`, + `rms10_v3.npz` |
+
+## What to check after the next run (N = 116 + block weighting + Phase B2 + §2.6)
+First, interactive run up to §2.6 (the §1 items already held in the 2026-11-03 run):
 - [ ] §1.1: "2 excluded — questionnaire_5_P012, questionnaire_5_P020"; 118 → 116 participants,
       2360 → 2320 rows; per form F1 20→20 · F2 21→21 · F3 26→26 · F4 19→19 · F5 32→30; asserts pass.
 - [ ] §1.1b maps ≈ V 2.94 + 1.57z, A 3.39 + 1.53z · §1.2b anchors V 0.342 → 0.338, A 0.276 → 0.253 ·
       8/60 class changes raw → norm · §1.2 classes HA_LV 20, LA_LV 17, HA_HV 11, Neutral 7, LA_HV 5
       (`Schindlers_List_EXP` HA_LV → LA_LV) · §1.4 prints the exclusions.
-- [ ] §2.6: every recompute assert passes; the declared substitutions listed (expected: vibrato rate
-      of the two MEC excerpts); LUFS diff_minus_3dB ≈ 0; listen to the four players per excerpt;
-      look at the overview / zoom figures; fill `audit_checklist.csv`; read the 20-piece direction
-      exceptions. Then set `RUN_MANUAL_AUDIT` as wanted and launch the full run.
+- [ ] §2.2 (B2): the Viterbi-source line ("12 - abs" found → assumption holds; ⚠️ otherwise);
+      `rms10_v3.npz` computed once (60 excerpts, length assert ✅); octave fixes unchanged (3 frames).
+- [ ] §2.2 segmentation: old (Phase B rule) vs new note counts — total, per condition, per excerpt;
+      re-articulation splits; `REART_DIP_DB` 3 / 6 / 9 sensitivity of the total and of Mozart VC4
+      MEC/EXP/EXG (score: 19 each); close splits (⚠️ > 5 % of notes).
+- [ ] §2.2 vibrato: analysed notes at 500 / 650 / 800 ms; windows / vibrato windows; substitutions
+      (no note ≥ 500 ms: ___ — ⚠️ above 10; no vibrato window: ___ — expected ≈ every MEC + SQ8);
+      rate inside 4–8 Hz (assert), half-extent / coverage ranges.
+- [ ] §2.2 portamento: glides / transitions; verdict counts (expect many "viterbi-limited jump");
+      glide rise / excess / extent ranges.
+- [ ] §2.2 **calibration grids** (MEC negative control): false-positive vibrato windows at the
+      deployed R² 0.50 / 3 c (*) and false-positive glides at excess 50 ms; **⚠️ if either > 5 %** —
+      then discuss the constants with the author before the full run (nothing is auto-tuned).
+- [ ] §2.4: timing features recomputed with the B2 onsets (`dtw_features_v3.csv`); DTW forwarding
+      count (3–10).
+- [ ] §2.6: every recompute / detail-consistency assert passes (windows → coverage / rate / extent,
+      window fit → R², transitions → portamento); the declared substitutions listed; LUFS
+      diff_minus_3dB ≈ 0; listen to the players; look at the overview (shaded vibrato windows,
+      magenta splits, env_db) and zoom figures (fitted sinusoids); **AUTHOR VALIDATION V1–V6 all
+      PASS?** (V1 Méditation MEC no glide · V2 Méditation EXP C♯6 / D6 separate, C♯6→D6 glide, D5 / B4
+      ≥ 50 % vibrato windows, F♯5 / B5 vibrato · V3 Méditation EXG C♯6 trend range ≤ 80 c, F♯5 / B5 / D6
+      / D5 vibrato · V4 Mozart VC4 19 notes × 3 · V5 SQ8 zero vibrato windows · V6 every MEC coverage
+      ≤ 0.05 and portamento ≤ 0.05) and the F♯5→A5 / A4→B4 old vs new verdicts; fill
+      `audit_checklist.csv`; read the 20-piece direction exceptions. Then set `RUN_MANUAL_AUDIT` as
+      wanted and launch the full run.
 Full run:
 - [ ] §4.0: class prevalences 11/20/5/17/7 and the analytic uniform F1; block-weighting guard ✅ and
       the printed weights (expected MERT-full w ≈ 0.51, CREPE / Essentia ≈ 4.46, DTW ≈ 5.33 for
@@ -202,6 +322,12 @@ Full run:
 - [ ] Everything else at N = 116: NestedSelect vs strict P95 (piece), §4.9 B-INC q, §5.5 CoE,
       §5.6, §6.1b, the §5.1 BH count (180 tests). All guards ✅. Total runtime (≈ 97 min at N = 118
       + 4E ≈ a few minutes + §2.6).
+- [ ] **§5.1b dose-response re-check for the vibrato family** — the thesis abstract claims that
+      vibrato extent / coverage escalate MEC → EXP → EXG (Phase B: z +5.14 / +4.90). With the B2
+      vibrato (MEC ≈ no vibrato windows by construction of the negative control) re-read the Page z
+      of extent, coverage and rate before keeping the claim; also §5.6 Vibrato / Portamento rows
+      (Phase B: removing Portamento *raised* F1 — consistent with the false alarms) and §6.1b for the
+      vibrato / portamento descriptors (re-check `CREPE_UNIQUE2`).
 
 ## Current findings — Phase B run on N = 118 (pre-block-weighting; superseded by the next run)
 All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116 values are in
@@ -266,7 +392,8 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
 - [x] §2.2 octave corrections (3 frames); vibrato rate 37 distinct values (> 20 ✅); half-extent 0–32 c;
       substitutions: no note ≥ 800 ms 1/60 (no ⚠️), no vibrato note 23; F0 range max 3100 c.
 - [x] §2.2 portamento extents within 80–2000 c; glides on 24 % of transitions — but median 62 ms and
-      ≥ 12/20 MEC with a glide → **under audit** (false alarms?).
+      ≥ 12/20 MEC with a glide → **confirmed false alarms by the 2026-11-05 audit (crepe's Viterbi
+      ramp) — fixed in Phase B2 (B9b)**.
 - [x] §2.3 normalised flux correlates less with LUFS (0.51 vs 0.87); DR gate sensitivity ⚠️ (ρ 0.79).
 - [x] §2.3c flatness test inconclusive for 60/60 at FLAT_MIN 0.2 → **under audit**.
 - [x] §2.4/§3.3b timing manipulation check fails (tempo log2-SD falls MEC → EXG) → explained by the
@@ -300,13 +427,21 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
     and X_C).
   - Fig 5 (§4.7) omits the MEC points (`cc` holds only EXP/EXG) / figure dedup.
   - §4.2 / §4.7 use a fixed Ridge α = 10 while the rest uses nested ridge.
-- **UNDER AUDIT (§2.6):**
-  - portamento false alarms (median glide 62 ms; ≥ 12/20 MEC with a glide);
-  - possible note splitting by wide vibrato (max half-extent 32 c, 17 close splits);
-  - `timing_tempo_logsd` MEC > EXP > EXG and the tempogram's sensitivity to articulation;
-  - log-attack time computed on Essentia waveform onsets;
+- **Audit of 2026-11-05 — confirmed and fixed in Phase B2:** portamento false alarms (crepe's
+  Viterbi ramp; B9b) · note segmentation merging notes with slides and repeated notes (B2 plateaus
+  + re-articulation splits; the Phase B worry "note splitting by wide vibrato" is now covered by the
+  plateau tolerance + merge rule and checked via close splits / V2–V4) · the FFT presence test
+  rejecting real vibrato (B8b).
+- **Audit findings still OPEN (documented, not changed):**
+  - integrated LUFS Essentia − pyloudnorm = **+3.055 LU on all 6 audited excerpts** (dual-mono
+    duplication — a constant offset; decide whether to subtract 3.01 LU or report as is);
+  - `es.Key`: **Mozart_VC4_EXP = G minor**, the other five D major (key strength is the only key
+    feature used, but the estimate is unstable);
+  - `timing_tempo_logsd` Méditation **MEC 0.256 > EXP 0.158 > EXG 0.135** and pulse clarity lowest at
+    MEC (✗) — the tempogram reacts to articulation, not only to rubato;
+  - log-attack time **not sharper in the spiccato Mozart EXP** (✗) — LAT computed on Essentia
+    waveform onsets;
   - DTW / duration ratio computed over whole files incl. silence;
-  - the LUFS +3 LU dual-mono offset (Essentia duplicates the mono file to 2 channels);
   - DR gate sensitivity (6 of 9 variants ρ < 0.9);
   - §2.3c flatness noise-floor test inconclusive for 60/60.
 - **Not approved / deferred (unchanged):** SHAP fitted in-sample (§5.2) · §5.3 embedding-distance
@@ -318,11 +453,14 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
 - **`LA_HV` has n=5 from only 2 pieces** (La_Vita ×3, Meditation_Thais MEC+EXP; same at N = 116).
 - **Session map not provided yet** (`SESSION_MAP_CSV`); gain equality across the 3 recording
   sessions is not independently verified.
-- **Parameter ablations still pending:** CREPE (step_ms; voicing threshold and B8/B9 constants now
-  cheap from the cached tracks), Essentia frame sizes, tempogram window / tempo prior.
+- **Parameter ablations still pending:** CREPE (step_ms; voicing threshold and the B2 constants
+  cheap from the cached tracks + envelope), Essentia frame sizes, tempogram window / tempo prior.
 - §5.5's headline CoE is a best-of over two black boxes (max(MERT-PCA, MERT-full)) — conservative;
   the two separate gaps are saved in `coe_gaps.csv`.
-- B9 detectability limit: a glide is only seen if its trend crosses the 70-cent boundary rule.
+- B2 detectability limits: a glide is only seen between two plateau notes (a slide that never
+  settles within ±40 c is part of a transition, not a note); a re-articulation without an envelope
+  dip ≥ 6 dB (e.g. a seamless legato bow change) is not split; vibrato on notes < 500 ms or with a
+  half-extent < 3 c is invisible; rates outside 4–8 Hz are clamped to the band edge.
 
 ## Conventions
 - Scale **0–6**, `VA_MID=3.0`, `NEUTRAL_RADIUS=0.75` (un-tuned), `MERT_LAYERS=[5,6,7]`.
@@ -331,18 +469,22 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
   **`EXCLUDED_PARTICIPANTS`**, `SESSION_MAP_CSV`, `OLD_CACHE_NAMES` (§0.3); `RIDGE_ALPHAS=
   logspace(-2,4,13)`, inner `GroupKFold(5)`, `NMS_N_JOBS=os.cpu_count()`, `NMS_TIE_TOL=1e-12` (§4.0);
   `TUNE_GRID_C={'C': logspace(-3,2,6)}` (§4.1); probe `ALPHAS=[1,10,100,1000,10000]` (§6.1b).
-- CREPE (§2.2): 10 ms step, `viterbi=True`, voiced = confidence > 0.5; octave fix ±10 frames /
-  [1000,1400] c; trend 15 frames, boundary lag 5 / 70 c; notes ≥ 60 ms (timing/portamento) and
-  ≥ `VIB_MIN_NOTE_MS=800` (vibrato); vibrato band [3,10] Hz, N=4096, presence ±0.5 Hz / [1,15] Hz
-  ≥ 0.30 and half-extent ≥ 5 c; glides 40–400 ms, 80–2000 c, sign ≥ 80 %, rise × 1.25.
+- CREPE (§2.2, B2): 10 ms step, `viterbi=True`, voiced = confidence > 0.5; octave fix ±10 frames /
+  [1000,1400] c; trend 15 frames; plateaus ±40 c (range ≤ 80 c), merge < 50 c / ≤ 50 ms,
+  re-articulation dip 6 dB (150 ms pre / 60 ms post; sensitivity 3/6/9), env 25 ms rectangular on
+  the 10 ms grid; notes ≥ 60 ms (timing/portamento) and ≥ `VIB_MIN_NOTE_MS=500` (vibrato;
+  500/650/800); vibrato windows 500 ms / hop 250 ms, LS sinusoid 4–8 Hz step 0.05, R² ≥ 0.50,
+  half-extent ≥ 3 c; glides rise 80–500 ms, excess over t_min ≥ 50 ms (Viterbi 220 c/frame),
+  80–2000 c, sign ≥ 80 %, rise × 1.25. Legacy (report only): boundary lag 5 / 70 c (also the
+  close-split threshold), FFT presence ±0.5 Hz / [1,15] Hz ≥ 0.30, half-extent ≥ 5 c.
 - Essentia: DR gate `DR_ABS_GATE_DB=-60`, `DR_REL_GATE_DB=40`; flux on L1-normalised spectra.
   §2.3c: `FLAT_MIN=0.2` (0.1/0.2/0.3) over 50 Hz–8 kHz.
 - Timing/DTW: `DTW_SR=22050`, `DTW_HOP=512`, `DTW_TG_WIN=151` (≈ 3.5 s), log-normal tempo prior at
   100 BPM within 40–200 BPM, interior frames only (≥ 20), chroma-CQT alignment.
 - Excerpt IDs `PieceName_ConditionCode`; participant IDs `questionnaire_{n}_P{idx:03d}`.
 - `OUTPUT_DIR = '/kaggle/working/pipeline_outputs'`; caches `emb_mert_v2.npz`,
-  `crepe_tracks_v2.npz`, `feat_crepe_v2.csv`, `essentia_features_v2.csv/.npz`, `rms_frames_v2.npz`,
-  `dtw_features_v2.csv`; the §2.6 audit writes only to `OUTPUT_DIR/manual_audit/`.
+  `crepe_tracks_v2.npz`, `rms10_v3.npz`, `feat_crepe_v3.csv`, `essentia_features_v2.csv/.npz`,
+  `rms_frames_v2.npz`, `dtw_features_v3.csv`; the §2.6 audit writes only to `OUTPUT_DIR/manual_audit/`.
 - Forwarding gate is UNSUPERVISED (reads only features, never `Y`); StandardScaler (and the
   BlockScaler) stay inside each CV fold. No cell other than §4.0 builds a CV splitter; no cell
   rebinds a §4.0 or a HELPERS:descriptors name. The `# >>> HELPERS:cv_engine … # <<<` block (§4.0)
@@ -367,6 +509,8 @@ Full audit of the 2026-08-16 run's outputs; corrections in three phases.
   B-MERTFULL · B-shared CREPE tracks + octave fix + note segmentation · B8 vibrato · B9 portamento ·
   B10 F0 range · B11 normalised flux · B12 DR gate · B13 `timing_*` + 151-frame tempogram ·
   B-NF flatness floor + session map · B-cache `_v2`.
+- **Phase B2 — descriptor repairs after the manual audit (applied 2026-11-05, not run)** — see the
+  "Phase B2" section above (the table below is Phase A → Phase B; the B2 column changes are there).
 
 | Old (Phase A) | New (Phase B) |
 |---|---|
@@ -393,9 +537,12 @@ Pre-Phase-B vibrato results (e.g. the old "vibrato n.s." dose-response) came fro
 descriptor and are evidence about the descriptor only. Phase B (B8) repaired it (per-note analysis on
 time-contiguous segments, [3,10] Hz with a presence test, extent and coverage split). In the N = 118
 Phase B run **vibrato extent (z +5.14) and coverage (z +4.90) escalate MEC → EXP → EXG**, the rate
-does not (z +1.90 n.s.); Vibrato alone predicts little (F1 0.28, R²a 0.04). Remaining caveats:
-CREPE's 10 ms resolution, only notes ≥ 800 ms analysed, the declared median substitutions (rate for
-23 excerpts, all three for 1), possible note splitting by wide vibrato (under audit).
+does not (z +1.90 n.s.); Vibrato alone predicts little (F1 0.28, R²a 0.04). The 2026-11-05 audit
+then showed that B8's FFT presence test rejected real narrow vibrato and its notes merged with
+slides → **Phase B2 (B8b)**: windowed sinusoid fit on B2 plateau notes ≥ 500 ms. **The Phase B
+vibrato numbers above are superseded** and the escalation claim must be re-read in the next run
+(§5.1b). Remaining caveats: CREPE's 10 ms resolution, only notes ≥ 500 ms and half-extent ≥ 3 c,
+rates clamped to 4–8 Hz, the declared median substitutions (counts printed in §2.2).
 
 ## Thesis document (LaTeX, NTUA template) — status 2026-10-30
 Written separately from the notebook (folder `thesis_work`, `main.tex`, not in this repo).
