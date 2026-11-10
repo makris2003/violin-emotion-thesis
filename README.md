@@ -41,11 +41,11 @@ violin-emotion-thesis/
 
 ## Methods
 
-**Feature extraction.** Each excerpt is encoded with MERT (embeddings averaged over transformer layers 5–7), CREPE-derived pitch descriptors (vibrato, portamento, F0), Essentia DSP descriptors (dynamics, timbre, tonal) and timing/DTW descriptors, each reduced by one shared unsupervised forwarding gate.
+**Feature extraction.** Each excerpt is encoded with MERT (embeddings averaged over transformer layers 5–7), CREPE-derived pitch descriptors (vibrato, portamento, F0 — computed on plateau notes of the cached CREPE tracks; a note-splitting "re-articulation" detector based on envelope dips was tried and disabled because its splits followed the vibrato, and it is kept as a reported negative result), Essentia DSP descriptors (dynamics, timbre, tonal) and timing/DTW descriptors, each reduced by one shared unsupervised forwarding gate.
 
-**Prediction.** 5-class classification with nested model selection and valence/arousal regression with nested ridge, under leave-one-piece-out (primary) and LOOCV (secondary), against re-seeded chance floors; within-piece prediction with permutation tests and a noise ceiling; a block-lattice ablation study.
+**Prediction.** 5-class classification with nested model selection and valence/arousal regression with nested ridge, under leave-one-piece-out (primary) and LOOCV (secondary), against re-seeded chance floors; within-piece prediction with permutation tests and a noise ceiling; a block-lattice ablation study; MERT generalisation diagnostics (train vs test, a validation curve and a nearest-neighbour piece-identity test, with pre-declared reading rules).
 
-**Attribution.** Condition deltas, dose-response (Page's trend), SHAP, an interpretable linear read-out and the cost of explainability against MERT.
+**Attribution.** Condition deltas, dose-response (Page's trend), SHAP, an interpretable linear read-out, the cost of explainability against MERT, a sub-family ablation of the interpretable layer and a family-overlap analysis (pair removal, cross-family probes, correlations, a pre-declared triangulation rule).
 
 **Participant & excerpt screening.** The participant screening that sets the exclusions (v3) and the excerpt QC run outside the notebook. The two scripts in `scripts/` are the original (older) versions.
 
