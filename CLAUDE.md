@@ -1,5 +1,15 @@
 # Violin Emotion Thesis — Pipeline Overview
 
+> **Revision status (2026-11-16): Phase C1 — APPLIED, NOT RUN** (see "Phase C1" below): an
+> **empirical chance null** for the deployed classification pipeline (§4.5c) and a **DIAGNOSTIC MERT
+> per-layer study** (§2.1c per-layer cache + §4.4f, tier `6-mert-layers`); `RUN_MANUAL_AUDIT = False`.
+> **`MERT_LAYERS` stays `[5, 6, 7]`** — the author decides by hand after reading §4.4f. Notebook now
+> **114 cells**. **Next: the full run** (no interactive stop at §2.6 needed — the audit is skipped).
+>
+> **Phase B3 — RUN on Kaggle 2026-11-11** (papermill 08:29 → 10:36 UTC, ≈ 127 min, 108 cells, 0 errors;
+> outputs committed in `58cb2e7`). The B3 numbers that motivate C1 are quoted in "Phase C1" below; the
+> rest of the B3 checklist is not yet transcribed into these docs (the outputs are in the notebook).
+>
 > **Revision status (2026-11-03): Phase B has been RUN on N = 118** (Kaggle, Tesla T4, papermill
 > 2026-10-09 23:45 → 2026-10-10 01:22 UTC, ≈ 97 min, 101 cells, 0 errors; outputs saved in the
 > committed notebook). Its results (below) are **N = 118 / pre-block-weighting**.
@@ -17,7 +27,7 @@
 > carries the 2026-11-03 outputs for the unchanged cells).** Its key numbers are quoted in the
 > "Phase B3" section below (evidence (a)–(e)).
 >
-> **Phase B3 — APPLIED 2026-11-10, NOT RUN** (see the section below): the B2 re-articulation
+> **Phase B3 — APPLIED 2026-11-10 (since RUN, 2026-11-11 — see above)** (see the section below): the B2 re-articulation
 > detector is **disabled** for every feature (`REART_ENABLED = False`, kept report-only), the plateau
 > merge re-checks the 80 c range, vibrato windows at the 4 / 8 Hz grid edge are rejected, caches
 > `feat_crepe_v4.csv` / `dtw_features_v4.csv`, and two new diagnostic sections: **§4.4e** MERT
@@ -51,13 +61,14 @@ redirect (Google Apps Script), no balancing, no log.
 Ground truth = **5 classes** (4 circumplex quadrants + Neutral) from **normalized** VA means.
 Stimuli were **NOT loudness-normalized** for the participants (level is part of the stimulus).
 
-## Pipeline (notebook/thesis_pipeline.ipynb, Kaggle GPU, 108 cells since B3, runs top-to-bottom)
+## Pipeline (notebook/thesis_pipeline.ipynb, Kaggle GPU, 114 cells since C1, runs top-to-bottom)
 - **Part 1 — ground truth:** parse → **exclude `EXCLUDED_PARTICIPANTS` (§1.1, asserts 116
   participants / 2,320 rows / 60 excerpts)** → per-rater normalization (§1.1b, derived on the
   screened panel) → aggregate/derive labels → validation (§1.2b) → label matrix → rating stats
   (§1.4 prints the 2 exclusions) → lift.
 - **Part 2 — features:** MERT (768-dim, layers 5–7; §2.1 restores the positional-conv weight-norm
-  tensors and asserts them, cache `emb_mert_v2.npz`) · CREPE (§2.2: tracks cached once
+  tensors and asserts them, cache `emb_mert_v2.npz`; **§2.1c (C1)** caches the time-mean of all 13
+  hidden states, `emb_mert_layers_v3.npz`, label-free, read only by the diagnostic §4.4f) · CREPE (§2.2: tracks cached once
   `crepe_tracks_v2.npz` + a 10 ms RMS envelope `rms10_v3.npz` (report-only since B3), octave
   correction, **B2** plateau note segmentation (**B3: no re-articulation split**, `REART_ENABLED =
   False`; merge re-checks the 80 c range), sinusoid-fit vibrato (**B3: band-edge rule**) /
@@ -68,14 +79,17 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   sanity check (report only) · timing + DTW (§2.4/§2.4b: `timing_*` reference-free family, `dtw_*`
   deviation family vs MEC). Each extracted in full, then forwarded through one shared
   UNSUPERVISED gate `unsup_forward_select` (never sees Y). madmom/MusiCNN remain skip stubs.
-  **§2.6 = TEMPORARY manual descriptor audit** (see below; removable between the AUDIT markers).
+  **§2.6 = TEMPORARY manual descriptor audit** (see below; removable between the AUDIT markers;
+  **skipped since C1 — `RUN_MANUAL_AUDIT = False`**).
 - **Part 3 — EDA/validation** (incl. §3.3 CREPE sanity, §3.3b timing sanity + manipulation check).
 - **Part 4 — prediction:** **§4.0 = the one CV engine** (protocols, nested model selection =
   default classifier, nested ridge **with optional block weighting**, metrics, chance floors,
   Freedman–Lane + noise-ceiling helpers) · §4.1 NestedSelect (★default) + 8-classifier sensitivity
   table · §4.2 VA regression (+ `Ridge-nested · MERT-full`) · §4.4 + §4.4b/c/d ablation study ·
   **§4.4e MERT generalisation diagnostics (B3: train vs test, validation curve, NN identity)** ·
-  §4.5/§4.5b per-class + Dummy floors · §4.6–§4.8 on the default classifier / X_C · §4.9
+  **§4.4f MERT layer study (C1, DIAGNOSTIC: Stage A piece identity / condition decoding / ordering,
+  pre-declared suggestion — not applied; Stage B tier `6-mert-layers`; nested layer selection)** ·
+  §4.5/§4.5b per-class + Dummy floors · **§4.5c empirical null of NestedSelect on noise (C1)** · §4.6–§4.8 on the default classifier / X_C · §4.9
   within-piece prediction (B-INC Freedman–Lane incremental test, B-NC split-half noise ceiling).
 - **Part 5 — attribution:** condition-delta (BH-FDR over all 180 §5.1 tests) · dose-response
   (Page's trend) · SHAP · embedding distance · interpretable linear read-out · cost of
@@ -134,6 +148,14 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   `CHANCE_FLOOR_P95` = max P95 over strategies (strict "beats chance" line). §4.0 now prints the
   class prevalences of `Y` and the analytic uniform/stratified F1 derived from them (nothing
   hardcoded).
+- **Empirical null (C1, §4.5c):** the Dummy floors ignore the selection procedure and are too low
+  for NestedSelect (B3: 25 noise columns → piece F1 0.354 > Dummy strict P95 0.323). `EMP_NULL_F1`
+  = {(protocol, d): {mean, p95, p99, draws}} from `NULL_N_DRAWS = 100` i.i.d. N(0, 1) matrices per
+  d ∈ `NULL_DIMS = (25, 10)` through `cv_predict_nested_select` (`NULL_SEED = 0`, draw i → seed
+  0 + i; `NULL_PROTOCOLS = ('piece',)`, `RUN_NULL_LOO = False`). Read every classification F1 with
+  `emp_null_p(f1, protocol, n_features)` against the nearest d (`emp_null_dim`: ≤ 17 → 10, ≥ 18 → 25,
+  > 25 extrapolated); "beats the empirical null" = p < 0.05; a protocol without draws → NaN / "n/a".
+  The `CHANCE_FLOOR_*` names are unchanged.
 
 ## Key variables
 - `df_long` — per-rating, **screened** (§1.1); `EXCLUDED_PARTICIPANTS` (§0.3), `N_PARTICIPANTS_RAW`
@@ -174,6 +196,16 @@ Stimuli were **NOT loudness-normalized** for the participants (level is part of 
   `df_abl_commonality` · §5.6b `RUN_PAIR_ABLATION_LOO=False`, `OV_I_TOL=0.02`, `OV_PROBE_MIN=0.30`,
   `OV_RHO_MIN=0.40`, `df_ov_pairs`, `df_ov_probe`, `df_ov_probe_fam`, `df_ov_corr`, `df_ov_corr_fam`
   (§5.6b re-exports `df_ablation` / `ablation_master.csv` with the pair tier).
+- C1: §2.1c `MERT_N_HIDDEN = 13`, `extract_mert_layers`, `emb_mert_layers` ({eid: 13 × 768}),
+  `CACHE_MERT_LAYERS` · §4.4f flags `RUN_MERT_LAYER_STAGE_B = True`, `RUN_MERT_LAYER_NESTED = True`,
+  `MERT_LAYER_PROTOCOLS = ('piece', 'loo')`, constants `ML_N_PERM_COND = 1000`, `ML_SUGGEST_TOL = 0.05`,
+  `ML_TIER = '6-mert-layers'`; names `ML_DIR`, `ML_DEPLOYED` (`'W05-07'`), `ML_CANDIDATES`,
+  `ML_CAND_NAMES`, `ML_SET_NAME`, `ML_INTERP_LABEL` / `ML_INTERP_NAME`, `ML_NESTED_CLF`
+  (`'SVM-Linear C=1'`), `ML_NESTED_SCORES`, `ML_SUGGESTED`, `df_mert_layer_a` / `_b` / `_deltas` /
+  `_nested` / `_nested_freq`, `df_mert_layer_study`, `ml_plot_profile` (outputs in
+  `OUTPUT_DIR/mert_layers/`) · §4.5c `NULL_*`, `NULL_CACHE`, `EMP_NULL_F1`, `emp_null_dim`,
+  `emp_null_p`, `df_null_draws`, `df_emp_null_readout`, `df_mert_layer_study_null` · §5.6
+  `df_abl_subfamily['alone_emp_p']`. Temporaries are prefixed `_mlc_` / `_ml_` / `_null_`.
 
 ## Ablation study (§4.4b → §5.6, one engine)
 `ablate()` in **§4.4b** is the ONLY scorer; every tier appends to `ABL_ROWS`/`ABL_PRED`;
@@ -193,7 +225,11 @@ of §5.6b. `ablate(…, protocols=…)` already restricts the protocols (used by
   `4B-gate` + `4D-balancing` (§4.4c) ·
   **`4E-block-weighting`** (§4.4c: the 7 multi-block MERT-full subsets fitted unweighted and
   weighted; Δ = weighted − unweighted; the deployed member must equal its Tier-1 row) ·
-  `4C-neutral-radius` + `4C-ground-truth` (§4.4d; `X_C_REG` rows weighted as deployed).
+  `4C-neutral-radius` + `4C-ground-truth` (§4.4d; `X_C_REG` rows weighted as deployed) ·
+  **`6-mert-layers`** (§4.4f, C1, DIAGNOSTIC: the 25 MERT layer candidates built as deployed — §2.1b PCA
+  replicated for classification, MERT-full for regression — + the interpretable reference row; Δ vs
+  `MERT W05-07 (deployed)`; the deployed row must equal the Tier-1 `MERT` row; §4.4f re-exports
+  `ablation_master.csv`, §5.6 / §5.6b include the tier).
 - **Guards:** §4.0 engine equivalence (GaussianNB) · §4.0 NestedSelect parallel == serial · **§4.0
   block-weighting guard** · §4.4b lattice rebuilds `X_C/X_D/X_F` and `X_C_REG/X_D_REG/X_F_REG`
   (RAW matrices) · §4.4c 4D nested-on-X_A equals the lattice `MERT` row · **§4.4c 4E deployed ==
@@ -204,23 +240,31 @@ of §5.6b. `ablate(…, protocols=…)` already restricts the protocols (used by
   calibration cell = the MEC vibrato-window share · §4.4e refitted per-fold configs == NestedSelect,
   test F1 / ridge predictions == the §4.4b / §4.4c rows, validation curve == `cv_predict_multilabel` ·
   §5.6b `MG_X_INTERP` == `_X_fam(_interp_cols)`, pair-tier reference == §5.6 row,
-  `NestedRidgeOperator` == `nested_ridge_predict`.
-- **NOT run:** CREPE step_ms, Essentia frame sizes, per-MERT-layer (**ON HOLD** — decision
-  2026-11-03), CREPE voicing threshold / the B2 descriptor constants as an ablation tier (cheap from
+  `NestedRidgeOperator` == `nested_ridge_predict` · **C1:** §2.1c mean of the `MERT_LAYERS` rows ==
+  `emb_mert` (allclose rtol 1e-3 / atol 1e-4, max |diff| printed) · §4.4f `W05-07` == `emb_mert` /
+  `X_MERT_FULL`, its replicated PCA block == `X_A` (≤ 1e-5), its A1 == the §4.4e MERT-full row, **HARD
+  CHECK: the `W05-07` rows reproduce the §4.4b `MERT` row exactly** (predictions, F1, r, R², RMSE, both
+  protocols), inner LOPO never contains the test piece · §4.5c draw 0 (d = 25) == the §4.4e random
+  control (matrix and F1) · §7.1 one read-out row per headline cell · new cache names not in
+  `OLD_CACHE_NAMES`.
+- **NOT run:** CREPE step_ms, Essentia frame sizes, CREPE voicing threshold / the B2 descriptor constants as an ablation tier (cheap from
   `crepe_tracks_v2.npz`; §2.2 prints report-only sensitivities and the MEC calibration grids
   instead; the re-articulation detector is disabled since B3 and only reported), tempogram window /
-  tempo prior.
+  tempo prior. (Per-MERT-layer — ON HOLD on 2026-11-03 — is now run as the C1 DIAGNOSTIC §4.4f; the
+  deployed `MERT_LAYERS` is unchanged.)
 
 ## §2.6 — TEMPORARY manual descriptor audit (2026-11-03; updated for B2 on 2026-11-05 and for B3 on 2026-11-10)
+**C1 (2026-11-16): `RUN_MANUAL_AUDIT = False`** — both audit code cells only print "skipped"; the cells
+are kept (set `True` to run the audit again). The §2.6 markdown says so.
 **B3:** every recompute follows the deployed path (no re-articulation split; the merge range check; the
 band-edge rule — windows carry `edge` / `reason`, purple in the zooms); V2 / V3 vibrato checks also need
 the matched note to cover ≥ 80 % of the annotated span; **V4 is INFO** (repeated notes without a silence
 are counted once — known limitation); **new V7** reads `CREPE_NOTECOUNT_FRIEDMAN` (PASS iff p ≥ 0.05).
 The description below is the B2 one; where it mentions re-articulation splits / magenta markers, they
 are absent while `REART_ENABLED = False`.
-One markdown cell + two code cells between `# >>> AUDIT` / `# <<< AUDIT` markers (cells 39–41; the
-Kaggle run regenerated the ids: `617ff63d`, `c214f0e2`, `704bc12e`), right after §2.5.
-`RUN_MANUAL_AUDIT = True`, `AUDIT_EXCERPTS = Meditation_Thais_{MEC,EXP,EXG} + Mozart_VC4_{MEC,EXP,EXG}`;
+One markdown cell + two code cells between `# >>> AUDIT` / `# <<< AUDIT` markers (cells 41–43 since C1,
+39–41 before; the B3 Kaggle run regenerated the ids: `9767b524`, `c78e74f3`, `2c5ee847`), right after §2.5.
+`RUN_MANUAL_AUDIT` (`False` since C1), `AUDIT_EXCERPTS = Meditation_Thais_{MEC,EXP,EXG} + Mozart_VC4_{MEC,EXP,EXG}`;
 every other name is `_aud_*`; nothing downstream reads it; writes only to `OUTPUT_DIR/manual_audit/`;
 installs pyloudnorm (AUDIT only). It recomputes all 30 interpretable features with the pipeline's own
 B2 helpers (+ `CREPE_ENV_DB`) and asserts equality with `df_crepe/df_essentia/df_dtw` (CREPE/DTW 1e-6,
@@ -315,7 +359,7 @@ PASS / FAIL printed, never raised) + the Méditation EXP F♯5→A5 / A4→B4 ol
 | `CREPE_DIAG` `n_vib` | `n_vib_notes`, `n_windows`, `n_vib_windows`, `n_notes_60_v2`, `n_reart_splits`, `glide_excess`, `transitions`, `vib_windows` |
 | `feat_crepe_v2.csv`, `dtw_features_v2.csv` | `feat_crepe_v3.csv`, `dtw_features_v3.csv`, + `rms10_v3.npz` |
 
-## Phase B3 — re-articulation detector disabled + MERT / family-overlap diagnostics (2026-11-10; APPLIED, NOT RUN)
+## Phase B3 — re-articulation detector disabled + MERT / family-overlap diagnostics (2026-11-10; APPLIED; RUN 2026-11-11)
 **Evidence — the full B2 run (N = 116, block weighting; quoted by the author, outputs not committed):**
 - **(a) Re-articulation splits follow vibrato, not bow changes.** The B2 detector split a plateau where
   the 10 ms RMS envelope dips ≥ 6 dB — but on the violin vibrato also modulates the amplitude (the
@@ -417,7 +461,10 @@ come from the tempogram and are unaffected. Vibrato and portamento never needed 
 n.s. (V7 PASS); §5.1b note rate / IOI dose-response back to n.s. **PRE-DECLARED timing reading:** in
 §5.6 compare "Timing (ref-free)" alone F1 (piece) with 0.417 (Phase B) and 0.542 (B2) — near 0.54 → the
 timing signal is real; back near 0.42 → the B2 value was the vibrato artefact. Record which; quote only
-the B3 value in the thesis.
+the B3 value in the thesis. *As printed by the 2026-11-11 run (committed outputs, for the author to
+confirm): Timing (ref-free) alone F1 (piece) = 0.398 → closer to 0.417 — the B2 value was the vibrato
+artefact; deployed note-count Friedman χ²(2) = 0.535, p = 0.765 (V7 PASS). The other A7 items are not
+transcribed yet.*
 
 **Known limitations (B3, documented — NOT fixed):** repeated notes without a silence count as one
 (Mozart_VC4 ≈ 17 / 16 / 20 vs 19) · slow slides can create short "ramp plateaus" (a glide counted twice,
@@ -425,7 +472,100 @@ e.g. B5→C6→C♯6 in Meditation_Thais_EXG) · the 80 ms glide minimum rejects
 residual MEC detections (V6: 5 MEC — the glides look like position shifts) · tempo log2-SD / pulse
 clarity / log-attack time / `es.Key` (Mozart_VC4_EXP read as G minor) still open.
 
-## What to check after the next run (N = 116 + Phase B3)
+## Phase C1 — empirical chance null + DIAGNOSTIC MERT layer study (2026-11-16; APPLIED, NOT RUN)
+**Why the empirical null — the B3 random-control finding (run of 2026-11-11, `piece`).** §4.4e's capacity
+control (25 i.i.d. N(0, 1) columns, seed 0) through NestedSelect scored **piece F1 0.354**, above the Dummy
+strict P95 **0.323** (uniform mean 0.272); on the validation curve the noise reached **0.468 at C = 0.001**
+(NestedSelect chose C = 0.001 in 14/20 piece folds for the noise). Likely mechanism: at a tiny C the balanced
+linear SVC is ≈ a class-mean-difference rule whose threshold follows the training-label composition of each
+LOPO fold, and the labels cluster within pieces. The Dummy floor ignores the selection procedure, so it is
+not an adequate null for the deployed classifier (regression is unaffected: noise R² ≈ 0). Context from the
+same run: same-piece nearest neighbour MERT-full 100 %, MERT-PCA25 90 %, interpretable 57 % (chance 3.4 %) —
+the **piece-identity shortcut rule fired** (capacity overfitting did not); F1 LOOCV 0.623 → piece 0.310.
+
+**How the null is read (§4.5c, new cell after the §4.5 figures).** `NULL_N_DRAWS = 100` draws per
+d ∈ `NULL_DIMS = (25, 10)` (25 = MERT-PCA25 / interpretable layer; 10 = CREPE / Essentia; DTW 7 → 10), each an
+i.i.d. standard-normal 60 × d matrix (seed `NULL_SEED` + draw, `NULL_SEED = 0`) through the deployed
+`cv_predict_nested_select` path (same `Y`, §4.0 folds, 13 configs, inner GroupKFold(5), tie rule), pooled
+test F1-macro as the headline, NestedSelect config counts recorded; `NULL_PROTOCOLS = ('piece',)`,
+`RUN_NULL_LOO = False`. Cache `null_f1_draws.csv` (reused iff the settings hash — draws, dims, seed,
+protocols, `Y`, configs, inner splits, tie rule, groups — matches; the cell prints which). Draw 0 at d = 25
+is asserted to be the §4.4e random control (matrix and F1). `EMP_NULL_F1[(protocol, d)] = {mean, p95, p99,
+draws}` is printed next to the Dummy floors with the share of draws above the Dummy P95. Every reported
+classification F1 — §4.1 A–D, every §4.4b lattice row (`MERT + DTW` = `X_F`; §4.1 has no X_F row), the
+§4.4e blocks, the §4.4f candidates — gets the empirical one-sided p = (1 + #draws ≥ F1) / (1 + 100)
+against the nearest d (≤ 17 → 10, ≥ 18 → 25, > 25 extrapolated) and "beats empirical null" (p < 0.05) →
+`emp_null_readout.csv`. §5.6 draws the empirical P95 (d = 25) on the F1 panel and prints `alone_emp_p`;
+§7.1 adds "Empirical-null p" / "Beats empirical null" per protocol ('n/a' where not drawn).
+
+**MERT layer study (DIAGNOSTIC — `MERT_LAYERS` stays `[5, 6, 7]` until the author decides by hand).**
+- **§2.1c** (new, after §2.1b — §2.1b was already the MERT PCA forwarding cell) `extract_mert_layers`:
+  one forward pass exactly as `extract_mert` → (13, 768) float32 time-means of every hidden state
+  (0 = transformer input, 1–12 layers), asserted 13; cache `emb_mert_layers_v3.npz`; the mean of the
+  `MERT_LAYERS` rows must equal `emb_mert` (max |diff| printed, `allclose(rtol=1e-3, atol=1e-4)`).
+  Label-free; `extract_mert` / `emb_mert` / `emb_mert_v2.npz` unchanged.
+- **§4.4f** (new, after §4.4e) candidates: `L00`…`L12`, `W00-02`…`W10-12` (`W05-07` = deployed — asserted ==
+  `emb_mert`, then the deployed vectors are used), `ALL`; references: the 30-feature interpretable layer
+  (`MG_X_INTERP`) and `W05-07`. **Stage A (no ratings):** A1 same-piece NN share (cosine; §4.4e shuffle
+  scheme, 10 000, seed `SEED`; silhouette; descriptive; `W05-07` asserted == §4.4e) · A2 condition decoding
+  across pieces (piece-centred — label-free, the piece's own renditions —, §4.0 LOPO folds,
+  parameter-free nearest-centroid cosine classifier, accuracy vs 1/3, 1000 within-piece condition
+  permutations) · A3 share of pieces with d(MEC, EXG) the largest within-piece cosine distance (vs 1/3, same
+  permutations) · BH across the 25 for A2 and A3. **Pre-declared suggestion rule** (printed first): among
+  A2 q < 0.05 the lowest A1 share; within 5 pp prefer a 3-layer window (ties: A1, piece silhouette, order);
+  none → "keep W05-07"; printed as "SUGGESTED — not applied". **Stage B (descriptive):** every candidate
+  through `ablate()` in tier `6-mert-layers` (classification = §2.1b PCA 95 % replicated, transductive on
+  the 60; regression = MERT-full via `MERT_REG_REPR` + nested ridge), both protocols, Δ vs W05-07
+  (`abl_vs_ref`, paired, BH); **HARD CHECK** W05-07 == the §4.4b `MERT` row; per candidate piece / LOOCV
+  F1, the gap, R²v / R²a both protocols, NestedSelect configs; §4.5c adds the empirical-null p and BH q
+  across the 25. Pre-declared "beats W05-07 beyond the empirical null": F1 — ΔF1 > 0, paired q < 0.05 AND
+  empirical-null q < 0.05; R²a — ΔR² > 0, paired q < 0.05. **Nested layer selection** (`piece`): outer
+  §4.0 folds, inner LOPO over the training pieces (the `get_cv('piece')` splitter on the training rows),
+  FIXED estimators — `SVM-Linear C=1` (balanced) on a per-candidate PCA 95 % fitted on the inner training
+  rows; `StandardScaler → RidgeCV(RIDGE_ALPHAS)` on the 768 dims per target — choice by pooled inner
+  macro-F1 / SSE (ties → order), outer score + the same fixed estimators on W05-07, the choice per fold and
+  its frequency table; a stability diagnostic, not comparable with the headline. Cache
+  `mert_layer_nested.csv` + `mert_layer_nested_pred.csv` (settings hash).
+- Outputs `mert_layers/mert_layer_study.csv`, `fig_mert_layer_profile.png` (x = hidden state, windows at
+  their centre, ALL at 13; references interpretable / W05-07 / chance / Dummy P95 / empirical P95), a
+  one-line summary per question.
+
+**Flags / caches.** `RUN_MANUAL_AUDIT = False` (§2.6) · §4.4f `RUN_MERT_LAYER_STAGE_B = True`,
+`RUN_MERT_LAYER_NESTED = True`, `MERT_LAYER_PROTOCOLS = ('piece', 'loo')` · §4.5c `NULL_N_DRAWS`,
+`NULL_DIMS`, `NULL_SEED`, `NULL_PROTOCOLS`, `RUN_NULL_LOO` · new caches `emb_mert_layers_v3.npz`,
+`null_f1_draws.csv`, `mert_layers/mert_layer_nested(.csv, _pred.csv)`; nothing retired
+(`emb_mert_v2.npz` stays). **Changed cells:** intro (md), §2.6 md + §2.6a code (flag), §4.4c md + code (the
+"per-layer MERT pending" text), §4.5 md, §5.6 md + code, §7.1 code, output reference (md); **new:** §2.1c
+(md + code), §4.4f (md + code), §4.5c (md + code) → 114 cells.
+
+**Expected runtimes (T4, 4 CPUs; the B3 run took ≈ 127 min).** §2.1c ≈ 0.5–1 min (B3 extracted `emb_mert`
+in 26 s) · §4.4f Stage A ≈ 1–2 min, Stage B ≈ 35–45 min (both protocols; ≈ 10–15 min `piece` only),
+nested ≈ 3–10 min · §4.5c ≈ 50–70 min (2 × 100 NestedSelect `piece` runs at ≈ 15–20 s; `RUN_NULL_LOO`
+≈ +3 h) · total ≈ +1.5–2 h → ≈ 3.5–4 h. Quick run: `MERT_LAYER_PROTOCOLS = ('piece',)`,
+`RUN_MERT_LAYER_NESTED = False`, `NULL_DIMS = (25,)` (the caches make reruns cheap).
+
+## What to check after the next run (N = 116 + Phase C1)
+- [ ] §2.1c: "extracted in this session"; max |diff| of the layer mean vs `emb_mert` (expected 0 —
+      both from this session) and the bit-identical count; assert ✅.
+- [ ] §2.6: both cells print "skipped".
+- [ ] §4.4f Stage A: the suggestion rule printed before the table; `W05-07` A1 == §4.4e ✅; where piece
+      identity is lowest (A1) and where condition is decoded best (A2, how many q < 0.05); A3; the
+      **SUGGESTED — not applied** line (or "keep W05-07").
+- [ ] §4.4f Stage B: **HARD CHECK ✅**; the `W05-07` PCA block bit-identical to `X_A`? (memo hit); piece /
+      LOOCV F1 and the gap per layer; R²a / R²v profile; Δ vs W05-07 with q; NestedSelect configs.
+- [ ] §4.4f nested: outer F1 / R²a / R²v vs the fixed-W05-07 score; choice frequency (stable or not);
+      runtime.
+- [ ] §4.5c: computed / loaded; draw 0 == §4.4e random control ✅; **empirical mean / P95 / P99 vs the Dummy
+      floor** and the share of draws above the Dummy P95; the dimension mapping; **which headline / lattice /
+      §4.4e F1 still beat the empirical null** and which beat only the Dummy P95; the layer candidates' p / q
+      and the completed "beats W05-07 beyond the empirical null" line; the redrawn profile figure.
+- [ ] §5.6: the empirical P95 line on the F1 panel; `alone_emp_p` per family; the full layer's p.
+- [ ] §7.1: "Beats empirical null (piece)" for A–D; loo = n/a.
+- [ ] All other guards ✅ (incl. §4.4c 4D == lattice, §6.2b, §5.6b); `ablation_master.csv` holds
+      `6-mert-layers`; total runtime.
+- [ ] Then the author decides **by hand** whether to change `MERT_LAYERS` (nothing is applied automatically).
+
+### B3 checklist (2026-11-10) — run on 2026-11-11; outputs committed, checklist not yet transcribed
 Interactive run up to §2.6 first:
 - [ ] §2.2 banner "re-articulation detector DISABLED"; octave fixes / Viterbi-source line unchanged.
 - [ ] §2.2 evidence table: detector OFF totals ≈ 616 / 596 / 592 (A2 may move them a little) vs ON
@@ -580,7 +720,9 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
 ## Decisions recorded (2026-11-03)
 - **Excerpt QC stays OUTSIDE the notebook** (ICC, r_wg, bimodality coefficient, Kruskal–Wallis,
   crossed additive model — offline scripts).
-- **Per-MERT-layer caching is ON HOLD.**
+- **Per-MERT-layer caching is ON HOLD.** *(Superseded 2026-11-16 by Phase C1: the supervisors asked for a
+  per-layer study — §2.1c caches every hidden state and §4.4f runs it as a DIAGNOSTIC; `MERT_LAYERS` stays
+  `[5, 6, 7]` until the author decides by hand.)*
 - **Timing pattern — the author's explanation:** in EXG he tended to play faster and more
   virtuosically in fast pieces and took more time in slow pieces. This is the likely reason for the
   local-tempo / duration-ratio directions (piece-dependent, no single MEC → EXG direction).
@@ -599,6 +741,15 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
     and X_C).
   - Fig 5 (§4.7) omits the MEC points (`cc` holds only EXP/EXG) / figure dedup.
   - §4.2 / §4.7 use a fixed Ridge α = 10 while the rest uses nested ridge.
+  - **NEW (C1): whether to change `MERT_LAYERS`** — the author decides by hand after reading §4.4f
+    (Stage A suggestion, Stage B profile vs the empirical null, nested stability). Nothing is applied
+    automatically.
+- **Addressed in C1 (pending run):**
+  - **Chance floor too low for the deployed classifier** — the Dummy floors ignore NestedSelect's
+    selection procedure; B3: 25 noise columns → piece F1 0.354 > Dummy strict P95 0.323 (0.468 at
+    C = 0.001). → §4.5c empirical null (NestedSelect on noise, d = 25 / 10, 100 draws); every reported
+    F1 is read against it (`emp_null_readout.csv`, §5.6, §7.1).
+  - **Per-MERT-layer study** (supervisors' request; was ON HOLD) → §2.1c + §4.4f (diagnostic).
 - **Audit of 2026-11-05 — confirmed and fixed in Phase B2:** portamento false alarms (crepe's
   Viterbi ramp; B9b) · note segmentation merging notes with slides and repeated notes (B2 plateaus
   + re-articulation splits; the Phase B worry "note splitting by wide vibrato" is now covered by the
@@ -629,7 +780,8 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
   cheap from the cached tracks), Essentia frame sizes, tempogram window / tempo prior.
 - **MERT generalisation / family overlap (B3):** no train score existed before B3 → §4.4e (capacity
   overfitting vs piece-identity shortcut, pre-declared rules) and §5.6b (redundancy vs noise vs
-  dilution, pre-declared triangulation) — read their verdicts before writing Ch. 9.
+  dilution, pre-declared triangulation) — read their verdicts before writing Ch. 9. (B3 run: the
+  piece-identity shortcut fired in MERT-full and MERT-PCA25, capacity overfitting did not.)
 - §5.5's headline CoE is a best-of over two black boxes (max(MERT-PCA, MERT-full)) — conservative;
   the two separate gaps are saved in `coe_gaps.csv`.
 - B2 / B3 detectability limits: a glide is only seen between two plateau notes (a slide that never
@@ -667,15 +819,21 @@ All guards passed (101 cells, 0 errors). Part 1 numbers are N = 118 (the N = 116
   100 BPM within 40–200 BPM, interior frames only (≥ 20), chroma-CQT alignment.
 - Excerpt IDs `PieceName_ConditionCode`; participant IDs `questionnaire_{n}_P{idx:03d}`.
 - `OUTPUT_DIR = '/kaggle/working/pipeline_outputs'`; caches `emb_mert_v2.npz`,
-  `crepe_tracks_v2.npz`, `rms10_v3.npz`, `feat_crepe_v4.csv`, `essentia_features_v2.csv/.npz`,
-  `rms_frames_v2.npz`, `dtw_features_v4.csv` (retired: pre-Phase-B names, `feat_crepe_v2/_v3.csv`,
-  `dtw_features_v2/_v3.csv`); the §2.6 audit writes only to `OUTPUT_DIR/manual_audit/`; §4.4e writes to
-  `OUTPUT_DIR/mert_diagnostics/`.
+  **`emb_mert_layers_v3.npz` (C1, §2.1c)**, `crepe_tracks_v2.npz`, `rms10_v3.npz`, `feat_crepe_v4.csv`,
+  `essentia_features_v2.csv/.npz`, `rms_frames_v2.npz`, `dtw_features_v4.csv`, **`null_f1_draws.csv`
+  (C1, §4.5c)**, **`mert_layers/mert_layer_nested.csv` + `_pred.csv` (C1, §4.4f)** — the C1 caches are
+  reused only when their settings hash / shape checks match (retired: pre-Phase-B names,
+  `feat_crepe_v2/_v3.csv`, `dtw_features_v2/_v3.csv`; C1 retires nothing); the §2.6 audit writes only to
+  `OUTPUT_DIR/manual_audit/`; §4.4e writes to `OUTPUT_DIR/mert_diagnostics/`; §4.4f to
+  `OUTPUT_DIR/mert_layers/`. C1 constants: `NULL_N_DRAWS=100`, `NULL_DIMS=(25,10)`, `NULL_SEED=0`,
+  `NULL_PROTOCOLS=('piece',)`, `RUN_NULL_LOO=False`; `ML_N_PERM_COND=1000`, `ML_SUGGEST_TOL=0.05`,
+  `MERT_LAYER_PROTOCOLS=('piece','loo')`; `RUN_MANUAL_AUDIT=False`.
 - Forwarding gate is UNSUPERVISED (reads only features, never `Y`); StandardScaler (and the
   BlockScaler) stay inside each CV fold. No cell other than §4.0 builds a CV splitter; no cell
   rebinds a §4.0 or a HELPERS:descriptors name. The `# >>> HELPERS:cv_engine … # <<<` block (§4.0)
   and the `# >>> HELPERS:descriptors … # <<<` block (§2.2) are self-contained.
-- **Editing the notebook:** the `.ipynb` (≈ 6 MB, single-line JSON) exceeds the Read tool's notebook
+- **Editing the notebook:** the `.ipynb` (≈ 7 MB without the §2.6 audio outputs, ≈ 35 MB with them;
+  single-line JSON) exceeds the Read tool's notebook
   limit, so NotebookEdit cannot be used on it. Edit cell by cell by splitting the JSON at the
   `{"cell_type"` boundaries, decoding / re-encoding the cell source with sed/awk under `LC_ALL=C`,
   clearing the outputs of changed code cells, and verifying the round trip byte for byte. Claude
@@ -698,7 +856,9 @@ Full audit of the 2026-08-16 run's outputs; corrections in three phases.
 - **Phase B2 — descriptor repairs after the manual audit (applied 2026-11-05, run in full)** — see the
   "Phase B2" section above (the table below is Phase A → Phase B; the B2 column changes are there).
 - **Phase B3 — re-articulation detector disabled, merge range check, vibrato band edge, §4.4e MERT
-  diagnostics, §5.6b family overlap (applied 2026-11-10, not run)** — see the "Phase B3" section above.
+  diagnostics, §5.6b family overlap (applied 2026-11-10, run 2026-11-11)** — see the "Phase B3" section above.
+- **Phase C1 — empirical chance null (§4.5c) + DIAGNOSTIC MERT layer study (§2.1c, §4.4f) +
+  `RUN_MANUAL_AUDIT = False` (applied 2026-11-16, not run)** — see the "Phase C1" section above.
 
 | Old (Phase A) | New (Phase B) |
 |---|---|
