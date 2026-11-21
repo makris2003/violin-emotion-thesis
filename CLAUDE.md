@@ -2,7 +2,9 @@
 
 **Purpose:** complete standalone context to continue work in a fresh conversation. Covers (1) scope, (2) current pipeline architecture, (3) progress, (4) findings, (5) open issues, (6) technical report status, (7) conventions, (8) workflow, (9) quick answers, (10) audit, **(11) listening study — final facts (N = 116)**, **(12) diploma thesis (LaTeX) — writing status**.
 
-> **Latest (2026-11-20): Phase C2 — APPLIED, NOT RUN** ("Phase C2" in §10 of CLAUDE.md / the "Phase C2" section of docs/thesis.md). The notebook was restructured so its order is the story order — **12 parts**: setup · ground truth · features · tool validation · **manipulation check (Part 4)** · **evaluation yardstick (Part 5: CV engine, Dummy floors, the empirical null — drawn before any F1)** · prediction · MERT diagnostics · within-piece · which techniques · cost of explainability · synthesis (claims table). Content: predictive (27) / descriptive (30) interpretable layer (replaces `DTW_DEV_IN_INTERP`), BH in the Page tests, an **exact-width 1000-draw primary null** with BH in a pre-declared family, tempogram ⚑ + sensitivity rows, deployed nested ridge in §6.2 / §6.8 / Fig 5, rewritten §7.4 / §7.5 / §9.3, §11.1 claims table; §2.6 audit, the 8-classifier Wilcoxon and §6.2b removed. 118 cells. **No result number below has changed — nothing has run**; the numbers the C2 run will replace are flagged in "Current results" and listed in the C2 run checklist. Old section numbers in the historical text are annotated "(now §x.y)". **Next:** the C2 run (the primary null takes ≈ 15 h → two sessions, resumable).
+> **Latest (2026-11-20, later): Phase C3 — APPLIED, NOT RUN** ("Phase C3" in §10 of CLAUDE.md / the "Phase C3" section of docs/thesis.md). Small fixes after the C2 run (which stopped its primary null at its time budget with 600 draws per width, 561 at d = 52): the null **resumes from the Kaggle input** `violin-thesis-null-cache` (no redraws; settings hash unchanged), **per-width draw targets** (1000 at d = 7 / 17, 600 at the other widths), **one empirical-null rule** in every cell (exact width, else the next larger primary width, else d = 52 extrapolated — the 100-draw map is no longer a reference), a **post-hoc revised claim-10 rule** (the timing set without the tempogram must also keep its F1 above its null and lose < 0.10 of R² arousal) and unique Fig 8 labels. 118 cells. **No result number below has changed**; the C2 outputs (commit `5c94dc2`) are not transcribed yet. **Next:** the C3 run (§5.3 ≈ 839 new draws ≈ 1.7 h).
+>
+> **Earlier (2026-11-20): Phase C2 — APPLIED, RUN 2026-11-20 (outputs in `5c94dc2`, not transcribed)** ("Phase C2" in §10 of CLAUDE.md / the "Phase C2" section of docs/thesis.md). The notebook was restructured so its order is the story order — **12 parts**: setup · ground truth · features · tool validation · **manipulation check (Part 4)** · **evaluation yardstick (Part 5: CV engine, Dummy floors, the empirical null — drawn before any F1)** · prediction · MERT diagnostics · within-piece · which techniques · cost of explainability · synthesis (claims table). Content: predictive (27) / descriptive (30) interpretable layer (replaces `DTW_DEV_IN_INTERP`), BH in the Page tests, an **exact-width primary null** (1000 draws per width as applied in C2; Phase C3: 1000 at d = 7 / 17, 600 elsewhere) with BH in a pre-declared family, tempogram ⚑ + sensitivity rows, deployed nested ridge in §6.2 / §6.8 / Fig 5, rewritten §7.4 / §7.5 / §9.3, §11.1 claims table; §2.6 audit, the 8-classifier Wilcoxon and §6.2b removed. 118 cells. **No result number below has changed — nothing has run**; the numbers the C2 run will replace are flagged in "Current results" and listed in the C2 run checklist. Old section numbers in the historical text are annotated "(now §x.y)". **Next:** the C2 run (the primary null takes ≈ 15 h → two sessions, resumable).
 >
 > **Earlier (2026-11-17): Phase B3 and C1 have been RUN — results transcribed (§4, "Current results").**
 > **Classification:** against the §4.5c (now §5.3 / §6.9) empirical null (P95 0.370 at 10 columns / 0.459 at 25 vs Dummy 0.323), only the sets with the reference-free timing block beat chance (DTW 0.398, CREPE + DTW 0.460, Essentia + DTW 0.373, piece).
@@ -56,14 +58,14 @@ The brief defines the spine **technique → acoustic → audience** plus two cat
 
 ---
 
-## 2. Pipeline Architecture (current: Phase C2, 118 cells — applied, NOT RUN)
+## 2. Pipeline Architecture (current: Phase C3, 118 cells — applied, NOT RUN)
 
 Runs top-to-bottom; **the notebook order is the story order** (Phase C2 — old → new map in the "Phase C2" section).
 `§` = the in-notebook section banners. 118 cells (67 code, 51 markdown).
 
 | Part | § | Content |
 |---|---|---|
-| **0 Setup** | 0.1–0.4 | install / imports / **config** (`VA_MID=3.0`, `NEUTRAL_RADIUS=0.75`, `MERT_LAYERS=[5,6,7]`, tag maps; C2: `TEMPOGRAM_UNRELIABLE`, `NULL_N_DRAWS_PRIMARY = 1000`, `CREPE_UNIQUE_R2_MAX = 0.2`, the shared `bh_fdr`, the unsupervised forwarding gate) / audio manifest |
+| **0 Setup** | 0.1–0.4 | install / imports / **config** (`VA_MID=3.0`, `NEUTRAL_RADIUS=0.75`, `MERT_LAYERS=[5,6,7]`, tag maps; C2: `TEMPOGRAM_UNRELIABLE`, `NULL_N_DRAWS_PRIMARY` (C3: `{7: 1000, 17: 1000}`, `NULL_N_DRAWS_PRIMARY_DEFAULT = 600`), C3: `NULL_CACHE_INPUT_DIR`, `CREPE_UNIQUE_R2_MAX = 0.2`, the shared `bh_fdr`, the unsupervised forwarding gate) / audio manifest |
 | **1 Audience ground truth** | 1.1 · 1.1b · 1.2 · 1.2b · 1.3 | parse + exclusions (116) · per-rater normalization · aggregate + 5-class labels · normalization validation · `Y` |
 | **2 Feature extraction** | 2.1 / 2.1b / 2.1c | MERT (768, layers 5–7, cache `emb_mert_v2.npz`) / PCA-95 forwarding (MERT-PCA25) / all 13 hidden states (`emb_mert_layers_v3.npz`, read only by §7.2) |
 | | 2.2 / 2.2b | CREPE (tracks cached, plateau notes, no re-articulation split, sinusoid-fit vibrato with the band-edge rule, Viterbi-aware portamento; `feat_crepe_v4.csv`; the report-only re-articulation table and legacy FFT helpers — pending decision) / forwarding |
@@ -76,7 +78,7 @@ Runs top-to-bottom; **the notebook order is the story order** (Phase C2 — old 
 | | 4.3a / 4.3b / 4.3c + conclusion | listeners: Friedman / Wilcoxon (`FRIEDMAN_RES`) / Page on valence & arousal + dose figure / tag lift + ground-truth class share per condition / printed conclusion (`MANIP_CHECK`) |
 | **5 Evaluation yardstick** | 5.1 | the one CV engine (protocols, NestedSelect default, nested ridge + block weighting, metrics, Dummy floors computed, Freedman–Lane + noise-ceiling helpers, guards) |
 | | 5.2 | Dummy floors table (`metrics_dummy_floors.csv`) |
-| | 5.3 | empirical null of NestedSelect on noise: 100-draw map (d = 10 / 25, `null_f1_draws.csv`) + **exact-width 1000-draw primary null** (A–D, Interpretable (27), DTW, CREPE + DTW; `null_f1_draws_primary.csv`, resumable) · `emp_null_ref` / `emp_null_mark` |
+| | 5.3 | empirical null of NestedSelect on noise: 100-draw map (d = 10 / 25, `null_f1_draws.csv`) + **exact-width primary null** (A–D, Interpretable (27), DTW, CREPE + DTW; C3: 1000 draws at d = 7 / 17, 600 elsewhere; `null_f1_draws_primary.csv`, resumable, copied from the Kaggle input `violin-thesis-null-cache`) · `emp_null_ref` / `emp_null_mark` — C3: the ONE reference rule (exact width, else the next larger primary width, else d = 52 extrapolated); the map is not a reference |
 | **6 Prediction** | 6.1 | NestedSelect ★default (✓ vs the empirical null) + 8-classifier sensitivity table, both protocols (`ablation_results.csv`) |
 | | 6.2 | VA regression: **deployed nested ridge on MERT-full 768 and Interpretable (27)**; fixed Ridge / SVR / MLP on MERT-PCA25 = sensitivity |
 | | 6.3 | ablation engine + 15-subset lattice (rows carry the empirical-null p) + tier `1b-tempogram-sensitivity` |
@@ -115,7 +117,9 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 ## 3. Progress since the previous handoff
 
-- **Phase C2 (2026-11-20, applied, NOT RUN).** Restructured to the story order (12 parts, 118 cells) + the C2 obligations 1, 2, 3, 5a, 5b, 6, 7 (4 on hold). Every code cell re-checked with `ast.parse` and an AST use-before-define scan; all outputs cleared; C1 notebook kept as `notebook/thesis_pipeline_C1_backup.ipynb`. Details and the run checklist in §10, "Phase C2".
+- **Phase C3 (2026-11-20, applied, NOT RUN).** Small fixes after the C2 run: the null resumes from the Kaggle input `violin-thesis-null-cache`, per-width draw targets (1000 at d = 7 / 17, 600 elsewhere; settings hash unchanged), one empirical-null rule everywhere, the claim-10 rule revised post hoc, unique Fig 8 labels. 15 cells changed (code: §0.3, §5.3, §6.3, §6.9, §7.2 continued, §7.4, Fig 8, §10.2, §11.1; markdown: intro, §5.3, §6.3, §6.9, §10.2, output reference); `ast.parse` + use-before-define scan clean; all outputs cleared; the C2 notebook is kept as `notebook/thesis_pipeline_C2_backup.ipynb`. Details in §10, "Phase C3".
+- **The C2 notebook was run on Kaggle (2026-11-20; outputs in `5c94dc2`).** §5.3 took 509.7 min and stopped the primary null at its 480-min budget (600 draws per width, 561 at d = 52). Not transcribed into §4.
+- **Phase C2 (2026-11-20, applied; run 2026-11-20).** Restructured to the story order (12 parts, 118 cells) + the C2 obligations 1, 2, 3, 5a, 5b, 6, 7 (4 on hold). Every code cell re-checked with `ast.parse` and an AST use-before-define scan; all outputs cleared; C1 notebook kept as `notebook/thesis_pipeline_C1_backup.ipynb`. Details and the run checklist in §10, "Phase C2".
 - **Phase C1 (2026-11-16, applied, not run).** Changed cells (outputs of changed code cells cleared): intro (md), §2.6 (now removed in C2) md + §2.6a (now removed in C2) code (`RUN_MANUAL_AUDIT = False`), §4.4c (now §6.4) md + code (the "per-layer MERT pending" text), §4.5 (now §6.6) md, §5.6 (now §10.2) md + code (empirical-null P95 line, `alone_emp_p`), §7.1 (now §11.1) code (empirical-null columns), output reference (md). New cells: §2.1c (md + code, after §2.1b), §4.4f (now §7.2) (md + code, after §4.4e (now §7.1)), §4.5c (now §5.3 / §6.9) (md + code, after the §4.5 (now §6.6) figures) → 114 cells. Details in §10, "Phase C1".
 - **The B3 notebook was run on Kaggle on 2026-11-11** (≈ 127 min, 0 errors; outputs committed in `58cb2e7`). Not yet transcribed into §4; the numbers C1 builds on are in §10, "Phase C1".
 - **Phase B3 (2026-11-10, applied; run 2026-11-11).** Changed cells (outputs of changed code cells cleared): Part 0 intro (md), §0.3 (`OLD_CACHE_NAMES` += the two v3 caches), §2.2 (md + code: `REART_ENABLED = False`, `reart_enabled` switch, merge range check, band-edge rule, `vibrato_window_reason`, banner, report-only re-articulation evidence table, note-count Friedman, `feat_crepe_v4.csv`), §2.4 (md + code: `dtw_features_v4.csv`, comments), §2.5 (cache asserts), §2.6 (now removed in C2) (md + both code cells: disabled path, band-edge display, V4 INFO, ≥ 80 % span rule, V7), §4.4c (now §6.4) (one print), §5.6 (now §10.2) (md + code: chance lines, q markers, commonality summary, `q_loss_r2_val`, timing reading), output reference (md). New cells: §4.4e (now §7.1) (md + code, after §4.4d (now §6.5)) and §5.6b (now §10.3) (md + code, after §5.6 (now §10.2)). Details in §10, "Phase B3".
@@ -148,7 +152,9 @@ Every tool is **extracted in full** (nothing lost on disk), then **forwarded** t
 
 ### Current results — B3 run (2026-11-11) + C1 run (2026-11-16), N = 116
 
-> ⚠️ **Phase C2 (applied 2026-11-20, NOT RUN) will replace** these numbers: everything that used the 30-feature interpretable layer in a model (now 27: Interpretable F1 ≈ 0.445, R²v ≈ 0.334, R²a ≈ 0.636 in the C1 run) — §6.2 (deployed rows), §7.1 / §7.2 interpretable references, §9.2 betas, §9.3 SHAP, §10.1 CoE, §10.2 families (7 instead of 8), §10.3 pairs (21 instead of 28; test 1 with I > 0.02); every empirical-null p / ✓ (exact-width, 1000-draw primary null, BH in the family — §6.9); the §4.2 stars (BH q instead of raw p); the new §6.3 tempogram rows, §6.8 (deployed nested ridge, chance references), §7.4 (signed, BH, 3 panels), §7.5 (lattice reads, CREPE-unique rule). Unchanged by construction: §4.2 / §9.1 values (descriptive 30), §8.1, the lattice, MERT rows, the Dummy floors, the 100-draw map. Section numbers below are pre-C2 with "(now §x.y)".
+> ⚠️ **Phase C2 (applied 2026-11-20, NOT RUN) will replace** these numbers: everything that used the 30-feature interpretable layer in a model (now 27: Interpretable F1 ≈ 0.445, R²v ≈ 0.334, R²a ≈ 0.636 in the C1 run) — §6.2 (deployed rows), §7.1 / §7.2 interpretable references, §9.2 betas, §9.3 SHAP, §10.1 CoE, §10.2 families (7 instead of 8), §10.3 pairs (21 instead of 28; test 1 with I > 0.02); every empirical-null p / ✓ (exact-width primary null — Phase C3: 1000 draws at d = 7 / 17, 600 elsewhere, one reference rule — BH in the family — §6.9); the §4.2 stars (BH q instead of raw p); the new §6.3 tempogram rows, §6.8 (deployed nested ridge, chance references), §7.4 (signed, BH, 3 panels), §7.5 (lattice reads, CREPE-unique rule). Unchanged by construction: §4.2 / §9.1 values (descriptive 30), §8.1, the lattice, MERT rows, the Dummy floors, the 100-draw map. Section numbers below are pre-C2 with "(now §x.y)".
+
+> ⚠️ **Phase C3 (applied 2026-11-20, NOT RUN) will also replace:** §6.9 / claim 5 (the DTW p / q — 1000 draws at d = 7); every ✓ / p that used the 100-draw map (the C1 empirical-null table below, the lattice, §7.1 and §7.2 rows); §10.2 `alone_emp_p` (the "against the empirical d = 10 null" line below); claim 10 (revised rule). Marked "⚠️ C3" inline.
 
 > **B3 run (2026-11-11, full, 108 cells, 0 errors, ≈ 127 min) and C1 run (2026-11-16, by the author), N = 116.** Transcribed 2026-11-17 from the committed B3 outputs and the C1 numbers the author reported (`emp_null_readout.csv`, the §4.4f (now §7.2) summary and profile figure). The pipeline is seeded and deterministic, so the B3 numbers below that C1 did not touch are expected to be identical in the C1 run. **These supersede every earlier Part 2–7 number.**
 
@@ -245,7 +251,7 @@ Same-piece nearest neighbour (chance 3.4 %; all p < 0.0001):
 
 **§5.6 (now §10.2) sub-families (piece; full 30-feature layer F1 0.444, R²a 0.648).**
 - **Removal losses:** only Dynamics on R²a is significant (**0.120, q 0.028**). Timing (ref-free) F1 +0.087 (q 0.17).
-- **Alone, F1:** Timing 0.398 · Timbre 0.393 · Dynamics 0.327 · Pitch 0.323 · Vibrato 0.316 · DTW-dev 0.314 · Tonal 0.295 · Portamento 0.273. Against the empirical d = 10 null (P95 0.370), only Timing and Timbre are above.
+- **Alone, F1:** Timing 0.398 · Timbre 0.393 · Dynamics 0.327 · Pitch 0.323 · Vibrato 0.316 · DTW-dev 0.314 · Tonal 0.295 · Portamento 0.273. Against the empirical d = 10 null (P95 0.370), only Timing and Timbre are above. ⚠️ C3: `alone_emp_p` now reads the primary null of the family's width or the next larger one.
 - **Alone, R²a:** Dynamics 0.436 · Pitch 0.355 · Timing 0.319 · Timbre 0.153 · DTW-dev 0.122 · Vibrato 0.050 · Tonal −0.003 · Portamento −0.087.
 - **Commonality (R²a):** full 0.648, Σ alone 1.34, Σ removal loss 0.30 → **shared ≈ 0.35**.
 
@@ -262,7 +268,7 @@ Same-piece nearest neighbour (chance 3.4 %; all p < 0.0001):
   - **"Score" families** (pitch, tonal, reference-free timing) are ≈ constant within a piece.
   - The shared arousal variance is multi-way (a common cause), not pairwise duplication. → **A limit of the design: the effect cannot be attributed to a single technique.**
 
-**§4.5c (now §5.3 / §6.9) empirical chance null (C1; piece, 100 draws).**
+**§4.5c (now §5.3 / §6.9) empirical chance null (C1; piece, 100 draws).** ⚠️ C3: every p / ✓ in this table is replaced by the exact-width primary null (C2, completed in C3: 1000 draws at d = 7 / 17, 600 elsewhere) under the one reference rule.
 
 | Width | Dummy strict P95 | Empirical P95 |
 |---|---|---|
@@ -401,7 +407,7 @@ LOOCV rows were not drawn (n/a). Caveats:
 - **NEW (C1): whether to change `MERT_LAYERS`** — decided by the author by hand after reading §4.4f (now §7.2) (Stage A suggestion, Stage B profile vs the empirical null, nested stability); nothing is applied automatically. **C1 run outcome:** the shortcut is in every layer, no layer beats the empirical null, nested selection is unstable, and the suggestion W09-11 is not worth adopting → **recommended: keep [5, 6, 7]** (record the author's decision).
 
 **Addressed in C1 (run 2026-11-16 — outcome in §4):**
-- **Chance floor too low for the deployed classifier** — the Dummy floors ignore NestedSelect's selection procedure; in the B3 run 25 i.i.d. noise columns scored piece F1 0.354 > the Dummy strict P95 0.323 (0.468 at C = 0.001). → §4.5c (now §5.3 / §6.9) empirical null; every reported classification F1 is read against it (`emp_null_readout.csv`, §5.6 (now §10.2), §7.1 (now §11.1)). **Outcome:** only 4 / 52 (3 distinct, all with the timing block) beat it; the final form (exact widths, 1000 draws, a primary family, BH) is a C2 obligation.
+- **Chance floor too low for the deployed classifier** — the Dummy floors ignore NestedSelect's selection procedure; in the B3 run 25 i.i.d. noise columns scored piece F1 0.354 > the Dummy strict P95 0.323 (0.468 at C = 0.001). → §4.5c (now §5.3 / §6.9) empirical null; every reported classification F1 is read against it (`emp_null_readout.csv`, §5.6 (now §10.2), §7.1 (now §11.1)). **Outcome:** only 4 / 52 (3 distinct, all with the timing block) beat it; the final form (exact widths, 1000 draws, a primary family, BH) is a C2 obligation (applied in C2; Phase C3: 1000 draws at d = 7 / 17, 600 at the other widths).
 - **Per-MERT-layer study** (the supervisors' request; ON HOLD since 2026-11-03) → §2.1c + §4.4f (now §7.2), diagnostic only. **Outcome:** the shortcut is in every layer; the information about the condition exists but is masked; no layer closes the gap to the interpretable layer (§4).
 
 **Manual audit of 2026-11-05 — confirmed and FIXED in Phase B2 (§10):** portamento false alarms (crepe's Viterbi decoder turns every jump into a ≤ 220 c/frame ramp; Méditation MEC D6→D5 and A5→A4 were "glides" of 62.5 ms) · notes merged with slides and repeated notes merged (Méditation EXP "D6" = C♯6 + slide; Mozart VC4 17 / 16 / 19 notes vs 19 in the score) · real narrow vibrato rejected by the FFT presence / 5 c rules (Méditation EXP D5, B4). The Phase B worry "note splitting by wide vibrato" is covered by the B2 plateau tolerance + merge rule (checked via close splits and V2–V4).
@@ -494,7 +500,7 @@ LOOCV rows were not drawn (n/a). Caveats:
 
 1. **Final form of the empirical null.**
    - A pre-declared primary family: headline A–D, interpretable (30), DTW, CREPE + DTW, and the multiclass model of item 4.
-   - An exact-width null per primary set, with `NULL_N_DRAWS = 1000` for that family (cached), and BH within the family.
+   - An exact-width null per primary set, with `NULL_N_DRAWS = 1000` for that family (cached), and BH within the family. *(Phase C3: 1000 draws at d = 7 / 17, 600 at the other widths.)*
    - The 100-draw d = 10 / 25 map stays for the descriptive lattice.
 2. **BH in §5.1b (now §4.2 / §4.3b)** (q column; stars from q).
 3. **Tempogram features:** either remove `timing_local_tempo_bpm`, `timing_tempo_logsd` and `timing_pulse_clarity` from the models, or keep them flagged "unreliable" and out of the attribution claims. Optionally add a note-onset tempo.
@@ -529,7 +535,8 @@ Methods subsections drafted: study design & graded manipulation · stimuli/corpu
 
 ## 7. Key conventions / variables (current)
 
-- **Phase C2 constants / names (2026-11-20):** §0.3 `TEMPOGRAM_UNRELIABLE`, `NULL_N_DRAWS_PRIMARY = 1000`, `CREPE_UNIQUE_R2_MAX = 0.2`, `bh_fdr` (moved from §5.1) · §4.1 `INTERP_PRED_COLS` (27), `INTERP_DESC_COLS` (30), `INTERP_FLAG_REASON`, `flag_label`, `top_feature_note`, `pred_short`, `X_INTERP` (now 27 columns) · §4.2 `df_dose` (+ `q`, `stars_q`, `flag`), `DOSE_FAMILY_N` · §4.3a `FRIEDMAN_RES` · §4.3b `DOSE_EMO` · Part 4 `MANIP_CHECK` · §4.3c `CLASS_SHARE_BY_COND` · §5.2 `df_dummy_floors` · §5.3 `PRIMARY_NULL_FAMILY`, `PRIMARY_NULL_ALIASES`, `PRIMARY_NULL_WIDTHS`, `NULL_PRIMARY_CACHE`, `NULL_PRIMARY_CHUNK = 50`, `NULL_PRIMARY_BUDGET_MIN = 480`, `df_null_primary`, `EMP_NULL_PRIMARY`, `NULL_PRIMARY_COMPLETE`, `emp_null_ref`, `emp_null_mark` · §6.2 `REG_INTERP`, `REG_DEPLOYED`, `REG_ROLE` · §6.3 tier `1b-tempogram-sensitivity`, `TG_DROP`, `df_abl_tempogram(_deltas)`; ablate rows `emp_null_p/_p95/_d/_kind`, `beats_emp_null` · §6.6 `kripp_alpha`, `df_base` (+ empirical-null columns) · §6.8 `PRED_QUADS` (MERT-full, deployed), `PRED_QUADS_INTERP`, `df_quad_acc`, `QUAD_N_PERM = 1000` · §6.9 `emp_readout_rows`, `df_emp_null_primary` · §7.3b `PROBE_R2` · §7.4 `df_sh_tests`, `df_sh_explore`, `SHIFT_TRANS` · §7.5 `CREPE_UNIQUE`, `CREPE_SUBST_COUNTS`, tier `7.5-mert-plus`, `df_block` (new layout) · §9.2 `READOUT_ORDER_CLS / _REG` · §9.3 `SHAP_COLS`, `SHAP_LABELS`, `df_shap_vs_beta` · §11.1 `df_claims`. Removed: `DTW_DEV_IN_INTERP`, `RUN_MANUAL_AUDIT`, `AUDIT_EXCERPTS`, `CREPE_UNIQUE2`, `PIVOT_F1` / `PIVOT_HL`, `default_rec` is now print-only.
+- **Phase C3 constants / names (2026-11-20):** §0.3 `NULL_N_DRAWS_PRIMARY = {7: 1000, 17: 1000}`, `NULL_N_DRAWS_PRIMARY_DEFAULT = 600`, `NULL_CACHE_INPUT_DIR` · §5.3 `null_primary_target`, `_NULL_PRIMARY_HASH_N_DRAWS = 1000` (the frozen hash field), `NULL_PRIMARY_BUDGET_MIN = 240`, `emp_null_ref` / `emp_null_mark` / `emp_null_dim` / `emp_null_p` on the one rule (kinds exact / borrowed / extrapolated / not drawn), `EMP_NULL_PRIMARY[…]['target']` · §6.9 `null_target` · §7.4 `SHIFT_PIECE_LABEL` · §10.2 `alone_emp_null`.
+- **Phase C2 constants / names (2026-11-20):** §0.3 `TEMPOGRAM_UNRELIABLE`, `NULL_N_DRAWS_PRIMARY = 1000` (C3: a per-width dict), `CREPE_UNIQUE_R2_MAX = 0.2`, `bh_fdr` (moved from §5.1) · §4.1 `INTERP_PRED_COLS` (27), `INTERP_DESC_COLS` (30), `INTERP_FLAG_REASON`, `flag_label`, `top_feature_note`, `pred_short`, `X_INTERP` (now 27 columns) · §4.2 `df_dose` (+ `q`, `stars_q`, `flag`), `DOSE_FAMILY_N` · §4.3a `FRIEDMAN_RES` · §4.3b `DOSE_EMO` · Part 4 `MANIP_CHECK` · §4.3c `CLASS_SHARE_BY_COND` · §5.2 `df_dummy_floors` · §5.3 `PRIMARY_NULL_FAMILY`, `PRIMARY_NULL_ALIASES`, `PRIMARY_NULL_WIDTHS`, `NULL_PRIMARY_CACHE`, `NULL_PRIMARY_CHUNK = 50`, `NULL_PRIMARY_BUDGET_MIN = 480`, `df_null_primary`, `EMP_NULL_PRIMARY`, `NULL_PRIMARY_COMPLETE`, `emp_null_ref`, `emp_null_mark` · §6.2 `REG_INTERP`, `REG_DEPLOYED`, `REG_ROLE` · §6.3 tier `1b-tempogram-sensitivity`, `TG_DROP`, `df_abl_tempogram(_deltas)`; ablate rows `emp_null_p/_p95/_d/_kind`, `beats_emp_null` · §6.6 `kripp_alpha`, `df_base` (+ empirical-null columns) · §6.8 `PRED_QUADS` (MERT-full, deployed), `PRED_QUADS_INTERP`, `df_quad_acc`, `QUAD_N_PERM = 1000` · §6.9 `emp_readout_rows`, `df_emp_null_primary` · §7.3b `PROBE_R2` · §7.4 `df_sh_tests`, `df_sh_explore`, `SHIFT_TRANS` · §7.5 `CREPE_UNIQUE`, `CREPE_SUBST_COUNTS`, tier `7.5-mert-plus`, `df_block` (new layout) · §9.2 `READOUT_ORDER_CLS / _REG` · §9.3 `SHAP_COLS`, `SHAP_LABELS`, `df_shap_vs_beta` · §11.1 `df_claims`. Removed: `DTW_DEV_IN_INTERP`, `RUN_MANUAL_AUDIT`, `AUDIT_EXCERPTS`, `CREPE_UNIQUE2`, `PIVOT_F1` / `PIVOT_HL`, `default_rec` is now print-only.
 - **Scale 0–6**, `VA_MID=3.0`, `NEUTRAL_RADIUS=0.75`, `MERT_LAYERS=[5,6,7]`.
 - `df_long` — long-format per-rating (parse, §1.1), **screened** (`EXCLUDED_PARTICIPANTS` dropped in §1.1, `N_PARTICIPANTS_RAW` = 118); gains `valence_norm/arousal_norm` in §1.1b.
 - **Block weighting (§0.3 / §4.0 (now §5.1) / §4.4b (now §6.3)):** `REG_BLOCK_WEIGHTING = 'equal'` · `block_weights(sizes)` · `BlockScaler(sizes)` · `block_sizes=` in `nested_ridge_predict` / `select_ridge_alpha` / `NestedRidgeOperator` / `_ridge_pipe` · `_abl_reg_kw(names, weighting=None)` · `ablate(reg_block_sizes=…, block_weighting=…)` · `abl_vs_ref(…, pcols=…)` · `abl_alpha_edge_report` · `df_abl_bw` (tier 4E); ablation rows carry `block_weighting`, `n_alpha_edge_val/aro`, `n_outer_folds`.
@@ -586,8 +593,91 @@ A full audit of the 2026-08-16 run's outputs produced three phases of correction
 - **Phase B2 — descriptor repairs after the manual audit (APPLIED 2026-11-05; run in full on N = 116)** — below.
 - **Phase B3 — re-articulation detector disabled + MERT / family-overlap diagnostics (APPLIED 2026-11-10; RUN 2026-11-11)** — below.
 - **Phase C1 — empirical chance null + DIAGNOSTIC MERT layer study + `RUN_MANUAL_AUDIT = False` (APPLIED 2026-11-16; RUN 2026-11-16 — results in §4)** — below.
-- **Phase C2 — story-order restructuring + the C2 obligations (APPLIED 2026-11-20; NOT RUN)** — below.
+- **Phase C2 — story-order restructuring + the C2 obligations (APPLIED 2026-11-20; RUN 2026-11-20 — outputs in `5c94dc2`, not transcribed)** — below.
+- **Phase C3 — null resumed from a Kaggle input, per-width draw targets, one null rule, claim-10 rule, Fig 8 labels (APPLIED 2026-11-20; NOT RUN)** — below.
 - **Phase C (deferred idea):** augmentation (see §5 item 11).
+
+### Phase C3 — applied 2026-11-20, NOT RUN
+
+**What it is.** Small fixes after the C2 run (Kaggle, 2026-11-20; outputs committed in `5c94dc2`, not yet
+transcribed into "Current results"). The C2 primary null stopped at its 480-min budget with **600 draws per width
+(561 at d = 52)**. Edited only (no cell executed, nothing committed); the C2 notebook (with its outputs) is kept as
+`notebook/thesis_pipeline_C2_backup.ipynb` (untracked); all outputs of `thesis_pipeline.ipynb` cleared (also the
+papermill / widget metadata). Still **118 cells**; numbering and structure of Phase C2 unchanged. Every code cell
+passes `ast.parse`; the AST use-before-define scan finds nothing. **No reported result number in these docs has
+been changed.**
+
+**Changes.**
+- **A · Resume the null from a Kaggle input (no redraws).** §0.3 `NULL_CACHE_INPUT_DIR =
+  '/kaggle/input/datasets/george031218732003/violin-thesis-null-cache'` (Kaggle dataset
+  `george031218732003/violin-thesis-null-cache`, holding the C2 `null_f1_draws.csv` and `null_f1_draws_primary.csv`).
+  At the start of §5.3, before any cache is read, each file is **copied** to `OUTPUT_DIR` if the input exists and
+  the `OUTPUT_DIR` copy does not (inputs are read-only; the cell appends). The cell then prints the rows per
+  (protocol, d) and how many match the current settings hash, with a loud warning if 0 match (cache invalidated).
+- **B · Per-width draw targets.** `NULL_N_DRAWS_PRIMARY = {7: 1000, 17: 1000}`, `NULL_N_DRAWS_PRIMARY_DEFAULT = 600`
+  (§0.3), read through `null_primary_target(d)` (§5.3). Reason: the DTW set (d = 7) passed BH with p = 4/601 = 0.0067
+  against a BH limit of 0.05/7 = 0.0071 — one draw decided it; d = 17 is CREPE + DTW (primary) and Essentia + DTW.
+  d = 52 is completed from 561 to 600. `NULL_PRIMARY_BUDGET_MIN = 240` (safety cap). The final n_draws / target per
+  width are printed in §5.3 and next to every primary p (§6.9 `null_n_draws`, `null_target`; claim 5 lists them).
+  **Settings hash unchanged:** the C2 hash contained `n_draws = int(NULL_N_DRAWS_PRIMARY)` = 1000; that field is now
+  the frozen literal `_NULL_PRIMARY_HASH_N_DRAWS = 1000`, so the per-width targets are not in the hash and every C2
+  row keeps its hash. Hash fields (primary): n_draws (frozen 1000), seed, protocols, n, y_sha1, groups_sha1, configs,
+  inner_splits, tie_tol, generator; (map, unchanged): n_draws 100, dims, seed, protocols, n, y_sha1, groups_sha1,
+  configs, inner_splits, tie_tol, generator. The primary hash is now built before the cache check (moved up, same
+  value).
+- **C · One null rule everywhere.** In C2, §6.9 used the exact-width null while §7.1, §7.2, §10.2, §10.3 and claim 10
+  used the 100-draw map (DTW: p 0.0067 vs 0.0099; Essentia + DTW, d = 17, got ✓ against the map d = 10, P95 0.370,
+  although the exact d = 17 null exists, P95 0.433). Now **one helper**, `emp_null_ref` (with `emp_null_mark`,
+  `emp_null_dim`, `emp_null_p` as wrappers), by width only:
+  1. a primary null exists at exactly d → **"exact-width null d = …"**;
+  2. else the **smallest primary width ≥ d** → **"null borrowed from d = … (conservative, next larger width)"** (the
+     null P95 rises with d);
+  3. else (d > 52, e.g. MERT-full 768) → **"null borrowed from d = 52 (extrapolated)"**.
+
+  Primary widths: 7, 10, 17, 25, 27, 35, 52. `emp_null_kind` ∈ exact / borrowed / extrapolated / not drawn. The
+  100-draw map is still drawn and cached (the primary d = 10 / 25 reuse its draws 0–99; the §7.1 draw-0 guard reads
+  it) but is **not a reference anywhere**. Cells: §5.3 (rule + explanation), §6.3 (✓ via `ablate`, explanation, the
+  lattice figure lines now the exact-width d = 10 / 25 P95), §6.4 / §10.3 / §7.2 first cell (✓ via `ablate` — no
+  code change needed), §6.9 (read-out via `emp_readout_rows`, explanation, `null_extrapolated`), §7.1 (via
+  `emp_readout_rows`), §7.2 continued (profile-figure P95 from the rule), §10.2 (`alone_emp_p` + new label column
+  `alone_emp_null`, figure lines), §11.1 (claims 5 / 10).
+- **D · Claim 10 rule (§11.1) — revised post hoc.** C2 checked only that the timing F1 survives removing the
+  tempogram; the C2 §6.3 showed that the timing **arousal** signal depends on it (R²a 0.32 → 0.09 for "DTW ref-free −
+  tempogram (4d)", p .016, q .08). New rule: **✔** Timing (ref-free) has the highest family-alone F1 (piece) AND beats
+  its null (rule C, `alone_emp_p` < .05) AND the 4-feature timing set without the tempogram keeps its F1 above its
+  null (empirical p < .05, rule C — d = 4 → borrowed from d = 7) AND loses < 0.10 of R² arousal (ΔR²a > −0.10) ·
+  **◐** highest family-alone F1 but another condition fails · **✘** not the highest. The value string shows the ΔF1
+  and the ΔR²a (p, q) of the tempogram removal. The code comment states it as a post-hoc revision after the C2 run.
+- **E · Fig 8 labels (§7.4).** `SHIFT_PIECE_LABEL` (built once in §7.4): the first 10 characters, extended only where
+  two piece names would collide (the five Shostakovich pieces → full names, `Shostakovich_V` for the VC1); asserted
+  unique; used by Fig 8 (the only place in §7.4 that prints piece names).
+
+**C2 outputs the C3 run will replace** (C2 values from the committed `5c94dc2` outputs, not transcribed elsewhere):
+- §6.9 / claim 5: the DTW p 0.0067 (600 draws) / q 0.0466 → 1000 draws at d = 7; CREPE + DTW p 0.0283 / q 0.099
+  (600 → 1000 draws); C: Combined at 561 → 600 draws. Claim 5 in C2: ◐ (1 of 7 primary sets q < .05: DTW).
+- Every ✓ / p that used the map: in §6.9 Essentia (map d = 10 → exact d = 10), Essentia + DTW (✓ vs the map d = 10,
+  p 0.0495 → exact d = 17), CREPE + Essentia (map d = 25 → borrowed d = 25), the MERT + X sets of width 32 / 42 / 45
+  (map d = 25 → borrowed d = 35 / 52), the two tempogram rows (map d = 10 / 25 → borrowed d = 7 / 25); the §7.1 block
+  rows, the §7.2 layer-candidate p / q, every ✓ printed by `ablate` in §6.3 / §6.4 / §7.2 / §10.2 / §10.3.
+- §10.2 `alone_emp_p` (map d = 10 / 25 → the primary null of the family's width or the next larger one).
+- Claim 10 (C2: ✔ under the old rule — "Timing (ref-free) F1 0.398, map-null p 0.0099 · − tempogram ΔF1 −0.018
+  (q 0.916)").
+
+#### C3 run checklist
+
+Runtime: §5.3 ≈ 839 new draws (d = 7: 400, d = 17: 400, d = 52: 39; d = 10 / 25 / 27 / 35: 0) × ≈ 7.3 s ≈ **102 min
+(≈ 1.7 h)**, inside the 240-min cap; everything else ≈ the C2 run.
+- [ ] Add the Kaggle dataset `violin-thesis-null-cache` as an input; §5.3 prints "copied … → OUTPUT_DIR" for both
+      files and the cache check shows **all rows matching** (map 200 / 200, primary 4 161 / 4 161), no ⚠️.
+- [ ] §5.3: "to draw" = 839 (d=7: 400, d=17: 400, d=52: 39); final draws d = 7 / 17: 1000, all others 600; no
+      INCOMPLETE warning; runtime ≈ 1.7 h.
+- [ ] §6.9: DTW p / q with 1000 draws (BH limit for rank 1 = 0.0071); `null_target` column; Essentia + DTW now
+      "exact-width null d = 17".
+- [ ] §6.3 / §7.1 / §7.2 / §10.2: labels "exact-width" / "borrowed … (conservative, next larger width)" /
+      "extrapolated"; no "map" label anywhere.
+- [ ] §7.4: Fig 8 labels unique.
+- [ ] §11.1: claim 5 lists the draws per width; claim 10 shows ΔF1 and ΔR²a; read the verdict against the revised
+      rule (the C2 ΔR²a ≈ −0.23 would give ◐).
 
 ### Phase C2 — applied 2026-11-20, NOT RUN
 
@@ -656,9 +746,9 @@ so there is nothing left to cross-check), the separate **§4.8** cell (merged in
   (`class_share_by_condition.csv`); a markdown conclusion + a cell that prints it from the variables (`MANIP_CHECK`).
 - **C · Part 5** — §5.2 floors only (`metrics_dummy_floors.csv`); §5.3 = the 100-draw map **before** any F1 + the
   **exact-width primary null [1]**: pre-declared family A–D, Interpretable (27), DTW, CREPE + DTW;
-  `NULL_N_DRAWS_PRIMARY = 1000` (§0.3); same seeding (map draws 0–99 reused); cache `null_f1_draws_primary.csv`
+  `NULL_N_DRAWS_PRIMARY = 1000` (§0.3; Phase C3: per width — 1000 at d = 7 / 17, 600 elsewhere); same seeding (map draws 0–99 reused); cache `null_f1_draws_primary.csv`
   (per-row settings hash, **resumable**, checkpoint every 50 draws, round-robin over widths,
-  `NULL_PRIMARY_BUDGET_MIN = 480`); `emp_null_ref` / `emp_null_mark` (labels "exact-width", "map", "null borrowed from
+  `NULL_PRIMARY_BUDGET_MIN = 480`, C3: 240); `emp_null_ref` / `emp_null_mark` (C2 labels — C3: one rule, no "map" reference — "exact-width", "map", "null borrowed from
   d = …"). Every printed classification ✓ from §5.3 on = above the empirical-null P95; in §6.1 only the NestedSelect
   rows carry it (the fixed classifiers carry none, a printed line says why); ablate rows gain `emp_null_p`,
   `emp_null_p95`, `emp_null_d`, `emp_null_kind`, `beats_emp_null` (`beats_chance` kept). §6.9 reads the map and the
@@ -707,7 +797,7 @@ run) and 10 (optional piece-centred MERT) open.
 
 #### C2 run checklist (what to look at; which C1 numbers change)
 
-Runtime: the primary null is the new cost — 7 widths × 1000 draws, minus the 200 map draws reused ≈ 6 800
+Runtime (C2, as applied then; the C3 targets are in "C3 run checklist"): the primary null is the new cost — 7 widths × 1000 draws, minus the 200 map draws reused ≈ 6 800
 NestedSelect runs × ≈ 8 s (C1: 26.6 min per 200 draws) ≈ **15 h**, more than one Kaggle session. With
 `NULL_PRIMARY_BUDGET_MIN = 480` the first session stops the primary null after 8 h (≈ 3 600 draws, ≈ 500 per width)
 and continues the notebook with p computed on the draws available (printed as INCOMPLETE); keep
@@ -727,7 +817,7 @@ and continues the notebook with p computed on the draws available (printed as IN
 - [ ] §6.3: X_INTERP == lattice assert; tempogram tier Δ / q; lattice rows now show `emp_null_kind` / `emp_null_p`.
 - [ ] §6.6: α column; §6.8: quadrant accuracy MERT-full vs Interpretable vs majority / permutation null; Fig 5 has 60 points.
 - [ ] §6.9: primary family p and **BH q** (C1, 100-draw map: DTW 0.0099, CREPE + DTW 0.0099, the rest ≥ 0.089 — all
-      will change with exact widths and 1000 draws).
+      will change with exact widths and 1000 draws — Phase C3: 1000 at d = 7 / 17, 600 elsewhere).
 - [ ] §7.1: draw-0 guard passes; interpretable reference now 27 columns (C1 train / test F1 0.79 / 0.44 with 30).
 - [ ] §7.2: interpretable reference (A1 65 %, A2 0.767 with 30) changes; W05-07 rows unchanged (HARD CHECK).
 - [ ] §7.4: signed r / q for 3 transitions; exploratory r with MEC arousal and ΔLUFS.
